@@ -103,7 +103,8 @@ def start_status_scheduler(bot: commands.Bot) -> None:
 
 
 async def _run_initial_and_start(
-    bot: commands.Bot, loop: tasks.Loop  # pyright: ignore[reportMissingTypeArgument]
+    bot: commands.Bot,
+    loop: tasks.Loop,  # pyright: ignore[reportMissingTypeArgument]
 ) -> None:
     await bot.wait_until_ready()
     await update_status(bot)

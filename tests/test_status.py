@@ -127,9 +127,7 @@ class TestStatusGenerator:
         fake_client.chat.completions.create = _fake_create
 
         result = asyncio.run(
-            status_generator.generate_status_message(
-                fake_client, mock.MagicMock()
-            )
+            status_generator.generate_status_message(fake_client, mock.MagicMock())
         )
         assert result is not None
         assert len(result) == 128
@@ -144,9 +142,7 @@ class TestStatusGenerator:
         fake_client.chat.completions.create = _fake_create
 
         result = asyncio.run(
-            status_generator.generate_status_message(
-                fake_client, mock.MagicMock()
-            )
+            status_generator.generate_status_message(fake_client, mock.MagicMock())
         )
         assert result is None
 
@@ -162,8 +158,6 @@ class TestStatusGenerator:
         fake_client.chat.completions.create = _fake_create
 
         result = asyncio.run(
-            status_generator.generate_status_message(
-                fake_client, mock.MagicMock()
-            )
+            status_generator.generate_status_message(fake_client, mock.MagicMock())
         )
         assert result is None

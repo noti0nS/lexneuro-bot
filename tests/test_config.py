@@ -130,9 +130,7 @@ def test_build_kwargs_no_thinking_without_reasoning_effort() -> None:
     }
     _, openai_config = get_openai_config(config, "deepseek/deepseek-r1")
     messages = [{"role": "user", "content": "hello"}]
-    kwargs = build_openai_chat_completion_kwargs(
-        openai_config, messages, stream=False
-    )
+    kwargs = build_openai_chat_completion_kwargs(openai_config, messages, stream=False)
     assert "reasoning_effort" not in kwargs
     assert kwargs.get("extra_body") is None
 
