@@ -1,0 +1,98 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "allow",
+    "bash": {
+      "*": "ask",
+      "uv run pytest *": "allow",
+      "uv run basedpyright *": "allow",
+      "uv run ruff *": "allow",
+      "uv run python *": "allow",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git add*": "allow",
+      "git *": "ask",
+      "git push*": "deny",
+      "git commit*": "ask",
+      "rm *": "ask",
+      "rmdir *": "ask",
+      "Remove-Item*": "ask",
+      "del *": "ask",
+      "curl *": "ask",
+      "Invoke-WebRequest*": "ask",
+      "wget *": "ask",
+      "mkdir *": "allow",
+      "New-Item*": "allow",
+      "type *": "allow",
+      "cat *": "allow",
+      "Get-Content*": "allow",
+      "Get-ChildItem*": "allow",
+      "ls *": "allow",
+      "ls": "allow",
+      "grep *": "allow",
+      "rg *": "allow",
+      "select-string*": "allow"
+    },
+    "webfetch": "allow",
+    "read": {
+      "*": "allow",
+      "config.yaml": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      "config.yaml": "deny",
+      ".env*": "deny",
+      "**/*.key": "deny",
+      "**/ssh-key*": "deny"
+    },
+    "doom_loop": "ask",
+    "external_directory": "deny"
+  },
+  "agent": {
+    "general": {
+      "permission": {
+        "bash": {
+          "*": "allow",
+          "git push*": "deny",
+          "git commit*": "ask",
+          "rm *": "ask",
+          "rmdir *": "ask",
+          "Remove-Item*": "ask"
+        },
+        "read": {
+          "*": "allow",
+          "config.yaml": "deny"
+        },
+        "edit": {
+          "*": "allow",
+          "config.yaml": "deny",
+          ".env*": "deny",
+          "**/*.key": "deny"
+        },
+        "webfetch": "ask"
+      }
+    },
+    "explore": {
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "ls *": "allow",
+          "ls": "allow",
+          "Get-ChildItem*": "allow",
+          "grep *": "allow",
+          "rg *": "allow",
+          "select-string*": "allow",
+          "type *": "allow",
+          "cat *": "allow",
+          "Get-Content*": "allow",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "allow"
+        },
+        "edit": "deny",
+        "webfetch": "deny"
+      }
+    }
+  }
+}
