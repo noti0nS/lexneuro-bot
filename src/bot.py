@@ -377,7 +377,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     )
                 curr_msg = curr_node.parent_msg
 
-        logging.info(
+        logging.debug(
             "Message received (user ID: %s, attachments: %s, conversation length: %s):\n%s",
             new_msg.author.id,
             len(new_msg.attachments),
