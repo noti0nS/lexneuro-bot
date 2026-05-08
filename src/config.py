@@ -14,8 +14,17 @@ class OpenAIRequestConfig(TypedDict):
     extra_body: Mapping[str, Any] | None
 
 
-def get_config(filename: str = "config.yaml") -> dict[str, Any]:
-    with open(filename, encoding="utf-8") as file:
+_config_path: str = "config.yaml"
+
+
+def set_config_path(path: str) -> None:
+    global _config_path
+    _config_path = path
+
+
+def get_config(filename: str | None = None) -> dict[str, Any]:
+    path = filename if filename is not None else _config_path
+    with open(path, encoding="utf-8") as file:
         return yaml.safe_load(file)
 
 

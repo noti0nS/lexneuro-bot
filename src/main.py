@@ -2,11 +2,15 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import override
 
 import discord
 
 from .bot import create_discord_bot
-from .config import get_bot_token, get_config, mask_sensitive_config
+from .config import get_bot_token, get_config, mask_sensitive_config, set_config_path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,8 +21,28 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config", "-c", default="config.yaml")
 
 
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    @override
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def _start_health_server() -> None:
+    port = int(os.environ.get("PORT", "8080"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logging.info("Health check server listening on port %d", port)
+
+
 async def main() -> None:
-    config = get_config(parser.parse_args().config)
+    set_config_path(parser.parse_args().config)
+    config = get_config()
     logging.info(
         "Loaded config:\n%s",
         json.dumps(
@@ -40,6 +64,7 @@ async def main() -> None:
 
 
 def run() -> None:
+    _start_health_server()
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
