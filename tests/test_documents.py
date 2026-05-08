@@ -44,7 +44,7 @@ class TestGetProcessor:
 
     def test_unsupported(self) -> None:
         with pytest.raises(ValueError, match="unsupported_document_format"):
-            get_processor("pdf")
+            get_processor("txt")
 
 
 class TestDocxProcessor:
