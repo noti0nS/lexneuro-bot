@@ -10,7 +10,7 @@ from typing import override
 import discord
 
 from .bot import create_discord_bot
-from .config import get_bot_token, get_config, mask_sensitive_config, set_config_path
+from .config import get_bot_token, get_config, load_config, mask_sensitive_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +41,7 @@ def _start_health_server() -> None:
 
 
 async def main() -> None:
-    set_config_path(parser.parse_args().config)
+    load_config(parser.parse_args().config)
     config = get_config()
     logging.info(
         "Loaded config:\n%s",

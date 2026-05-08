@@ -9,7 +9,7 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ..config import build_openai_chat_completion_kwargs, get_config, get_openai_config
+from ..config import build_openai_chat_completion_kwargs, get_openai_config
 from ..helpers.async_utils import await_task_with_heartbeats
 from ..helpers.content import get_completion_text
 from ..helpers.documents import (
@@ -95,8 +95,6 @@ def register_abnt_command(
         document: discord.Attachment,
         instructions: str | None = None,
     ) -> None:
-        state.config = await asyncio.to_thread(get_config)
-
         if not attachment_is_supported_word_document(document):
             await interaction.response.send_message(
                 "Tipo de documento não suportado. Envie um arquivo `.docx` ou `.odt`.",

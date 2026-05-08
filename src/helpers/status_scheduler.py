@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -22,7 +21,7 @@ async def _apply_status(bot: commands.Bot, text: str) -> None:
 
 
 async def update_status(bot: commands.Bot) -> None:
-    config = await asyncio.to_thread(get_config)
+    config = get_config()
 
     status_config = config.get("status") or {}
 

@@ -181,7 +181,6 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         if not should_process_message(new_msg, bot_user, msg_nodes):
             return
 
-        state.config = await asyncio.to_thread(get_config)
         if not user_has_permission(new_msg.author, new_msg.channel, state.config):
             return
 

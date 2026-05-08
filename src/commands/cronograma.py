@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -11,7 +10,6 @@ from openai import APIError
 from ..config import (
     OpenAIRequestConfig,
     build_openai_chat_completion_kwargs,
-    get_config,
     get_openai_config,
 )
 from ..helpers.documents import generate_document
@@ -239,8 +237,6 @@ class WeekdaySelectView(discord.ui.View):
                 pass
 
     async def _process_selection(self, interaction: discord.Interaction) -> None:
-        self._state.config = await asyncio.to_thread(get_config)
-
         logging.info(
             "Cronograma weekday confirm (user ID: %s, model: %s)",
             interaction.user.id,
@@ -416,8 +412,6 @@ def register_cronograma_command(
         hours_per_day: int = 4,
         instructions: str | None = None,
     ) -> None:
-        state.config = await asyncio.to_thread(get_config)
-
         try:
             parsed_date = parse_test_date(test_date)
         except ValueError as exc:

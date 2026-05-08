@@ -14,18 +14,22 @@ class OpenAIRequestConfig(TypedDict):
     extra_body: Mapping[str, Any] | None
 
 
-_config_path: str = "config.yaml"
+_config: dict[str, Any] | None = None
 
 
-def set_config_path(path: str) -> None:
-    global _config_path
-    _config_path = path
+def load_config(path: str) -> dict[str, Any]:
+    global _config
+    with open(path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    _config = cfg
+    return cfg
 
 
-def get_config(filename: str | None = None) -> dict[str, Any]:
-    path = filename if filename is not None else _config_path
-    with open(path, encoding="utf-8") as file:
-        return yaml.safe_load(file)
+def get_config() -> dict[str, Any]:
+    cfg = _config
+    if cfg is None:
+        raise RuntimeError("call load_config() before get_config()")
+    return cfg
 
 
 _SENSITIVE_CONFIG_KEYWORDS = (

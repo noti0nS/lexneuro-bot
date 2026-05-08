@@ -1,12 +1,9 @@
-import asyncio
 import logging
 from typing import Any
 
 import discord
 from discord.app_commands import Choice
 from discord.ext import commands
-
-from ..config import get_config
 
 
 def register_model_command(
@@ -43,9 +40,6 @@ def register_model_command(
         interaction: discord.Interaction, curr_str: str
     ) -> list[Choice[str]]:
         del interaction
-
-        if curr_str == "":
-            state.config = await asyncio.to_thread(get_config)
 
         choices = (
             [Choice(name=f"◉ {state.curr_model} (current)", value=state.curr_model)]
