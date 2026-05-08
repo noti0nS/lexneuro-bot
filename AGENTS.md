@@ -9,6 +9,7 @@ uv run basedpyright src tests          # typecheck
 uv run ruff check .                    # lint
 uv run ruff format --check .           # check formatting
 uv run python main.py                  # run the bot
+```
 
 - `main.py` → `src/main.py:run()` → `src/bot.py:create_discord_bot()` — this is the bot lifecycle.
 - `main.py` in the repo root is a dead stub, not the entrypoint.
