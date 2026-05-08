@@ -161,7 +161,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     register_pesquisa_command(discord_bot, state)
 
     @discord_bot.event
-    async def on_ready() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def on_ready() -> None:
         if client_id := state.config.get("client_id"):
             logging.info(
                 "\n\nBOT INVITE URL:\nhttps://discord.com/oauth2/authorize?client_id=%s&permissions=412317191168&scope=bot\n",

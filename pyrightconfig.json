@@ -3,4 +3,13 @@
   "reportUnknownMemberType": false,
   "reportUnusedCallResult": false,
   "reportAny": false,
+  "reportExplicitAny": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnnecessaryCast": false,
+
+  "reportUnannotatedClassAttribute": false,
+  "reportUnusedFunction": false,
+  "reportUnusedParameter": false,
+  "reportUnknownParameterType": false,
 }

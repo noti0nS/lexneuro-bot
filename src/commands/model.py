@@ -39,7 +39,7 @@ def register_model_command(
         )
 
     @model_command.autocomplete("model")
-    async def model_autocomplete(  # pyright: ignore[reportUnusedFunction]
+    async def model_autocomplete(
         interaction: discord.Interaction, curr_str: str
     ) -> list[Choice[str]]:
         del interaction

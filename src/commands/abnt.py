@@ -90,7 +90,7 @@ def register_abnt_command(
         name="abnt",
         description="Avalie um documento DOCX ou ODT conforme ABNT e receba melhorias",
     )
-    async def abnt_command(  # pyright: ignore[reportUnusedFunction]
+    async def abnt_command(
         interaction: discord.Interaction,
         document: discord.Attachment,
         instructions: str | None = None,
@@ -234,8 +234,7 @@ def register_abnt_command(
                 get_provider_error_detail(exc),
             )
             await interaction.followup.send(
-                "O provedor do modelo interrompeu a avaliação ABNT. "
-                f"Detalhe do provedor: `{str(exc)[:500]}`"
+                f"O provedor do modelo interrompeu a avaliação ABNT. Detalhe do provedor: `{str(exc)[:500]}`"
             )
             return
         except Exception:

@@ -28,7 +28,7 @@ WEEKDAY_OPTIONS: list[discord.app_commands.Choice[str]] = [
     discord.app_commands.Choice(name="Domingo", value="domingo"),
 ]
 
-_PYTHON_WEEKDAY: dict[str, int] = {
+PYTHON_WEEKDAY: dict[str, int] = {
     "segunda": 0,
     "terca": 1,
     "quarta": 2,
@@ -53,14 +53,14 @@ _FORMAT_EMOJIS: dict[str, str] = {
 }
 
 
-def _parse_test_date(raw: str) -> date:
+def parse_test_date(raw: str) -> date:
     try:
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError("Use o formato YYYY-MM-DD (ex: 2026-06-15).") from exc
 
 
-def _compute_study_window(
+def compute_study_window(
     *,
     test_date: date,
     today: date,
@@ -261,7 +261,7 @@ class WeekdaySelectView(discord.ui.View):
             return
 
         selected_weekdays = [
-            _PYTHON_WEEKDAY[v] for v in selected_values if v in _PYTHON_WEEKDAY
+            PYTHON_WEEKDAY[v] for v in selected_values if v in PYTHON_WEEKDAY
         ]
 
         state_config = self._state.config
@@ -269,7 +269,7 @@ class WeekdaySelectView(discord.ui.View):
         days_before_test = cronograma_config.get("days_before_test", 3)
 
         today = datetime.now().date()
-        calendar_dates, error = _compute_study_window(
+        calendar_dates, error = compute_study_window(
             test_date=self._test_date,
             today=today,
             days_before_test=days_before_test,
@@ -409,7 +409,7 @@ def register_cronograma_command(
         hours_per_day="Horas disponíveis por dia para estudo",
         instructions="Instruções adicionais para o cronograma",
     )
-    async def cronograma_command(  # pyright: ignore[reportUnusedFunction]
+    async def cronograma_command(
         interaction: discord.Interaction,
         test_date: str,
         subjects: str,
@@ -419,7 +419,7 @@ def register_cronograma_command(
         state.config = await asyncio.to_thread(get_config)
 
         try:
-            parsed_date = _parse_test_date(test_date)
+            parsed_date = parse_test_date(test_date)
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return

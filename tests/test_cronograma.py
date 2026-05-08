@@ -4,9 +4,9 @@ import pytest
 
 from src.commands.cronograma import (
     WEEKDAY_OPTIONS,
-    _PYTHON_WEEKDAY,
-    _compute_study_window,
-    _parse_test_date,
+    PYTHON_WEEKDAY,
+    compute_study_window,
+    parse_test_date,
 )
 from src.prompts.cronograma import (
     CRONOGAMA_SYSTEM_PROMPT,
@@ -16,28 +16,28 @@ from src.prompts.cronograma import (
 
 
 def test_parse_test_date_valid() -> None:
-    result = _parse_test_date("2026-06-15")
+    result = parse_test_date("2026-06-15")
     assert result == date(2026, 6, 15)
 
 
 def test_parse_test_date_valid_leap_year() -> None:
-    result = _parse_test_date("2028-02-29")
+    result = parse_test_date("2028-02-29")
     assert result == date(2028, 2, 29)
 
 
 def test_parse_test_date_invalid_garbage() -> None:
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
-        _parse_test_date("not-a-date")
+        parse_test_date("not-a-date")
 
 
 def test_parse_test_date_invalid_wrong_format() -> None:
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
-        _parse_test_date("15/06/2026")
+        parse_test_date("15/06/2026")
 
 
 def test_parse_test_date_invalid_empty() -> None:
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
-        _parse_test_date("")
+        parse_test_date("")
 
 
 def test_format_date_pt() -> None:
@@ -52,7 +52,7 @@ def test_calendar_window_computation() -> None:
     selected_weekdays = [0, 1, 2, 3, 4]
     days_before_test = 3
 
-    dates, error = _compute_study_window(
+    dates, error = compute_study_window(
         test_date=test_date,
         today=today,
         days_before_test=days_before_test,
@@ -72,7 +72,7 @@ def test_calendar_window_weekends_only() -> None:
     selected_weekdays = [5, 6]
     days_before_test = 3
 
-    dates, error = _compute_study_window(
+    dates, error = compute_study_window(
         test_date=test_date,
         today=today,
         days_before_test=days_before_test,
@@ -91,7 +91,7 @@ def test_calendar_window_empty_when_no_weekdays_match() -> None:
     selected_weekdays = [0]
     days_before_test = 3
 
-    dates, error = _compute_study_window(
+    dates, error = compute_study_window(
         test_date=test_date,
         today=today,
         days_before_test=days_before_test,
@@ -109,7 +109,7 @@ def test_calendar_window_too_short() -> None:
     selected_weekdays = [0, 1, 2, 3, 4]
     days_before_test = 3
 
-    dates, error = _compute_study_window(
+    dates, error = compute_study_window(
         test_date=test_date,
         today=today,
         days_before_test=days_before_test,
@@ -201,9 +201,9 @@ def test_weekday_select_options_count() -> None:
 
 
 def test_weekday_mapping_complete() -> None:
-    assert len(_PYTHON_WEEKDAY) == 7
-    assert _PYTHON_WEEKDAY["segunda"] == 0
-    assert _PYTHON_WEEKDAY["domingo"] == 6
+    assert len(PYTHON_WEEKDAY) == 7
+    assert PYTHON_WEEKDAY["segunda"] == 0
+    assert PYTHON_WEEKDAY["domingo"] == 6
 
 
 def test_system_prompt_includes_hours_constraint() -> None:

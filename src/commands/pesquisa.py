@@ -203,7 +203,7 @@ def register_pesquisa_command(
         extensao=EXTENSAO_CHOICES,
         format=FORMATO_CHOICES,
     )
-    async def pesquisa_command(  # pyright: ignore[reportUnusedFunction]
+    async def pesquisa_command(
         interaction: discord.Interaction,
         tema: str,
         contexto: str = "academico",
@@ -244,8 +244,7 @@ def register_pesquisa_command(
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, contexto: %s, extensao: %s, "
-            "paginas: %s, modo_pensamento: %s, formato: %s)",
+            "Pesquisa started (user ID: %s, tema: %r, contexto: %s, extensao: %s, paginas: %s, modo_pensamento: %s, formato: %s)",
             interaction.user.id,
             tema[:80],
             contexto,
@@ -277,8 +276,7 @@ def register_pesquisa_command(
                 curr_model = thinking_model
             else:
                 logging.warning(
-                    "modo_pensamento=True but no research.thinking_model configured, "
-                    "falling back to %s (user ID: %s)",
+                    "modo_pensamento=True but no research.thinking_model configured, falling back to %s (user ID: %s)",
                     curr_model,
                     interaction.user.id,
                 )
