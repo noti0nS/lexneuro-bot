@@ -503,6 +503,16 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                 datetime.now().timestamp() - request_started_at,
             )
 
+        except discord.DiscordServerError:
+            await new_msg.channel.send(
+                "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
+            )
+            logging.exception(
+                "Discord 503 error while generating response (user ID: %s, model: %s)",
+                new_msg.author.id,
+                openai_kwargs["model"],
+            )
+
         except Exception:
             logging.exception(
                 "Error while generating response (user ID: %s, model: %s)",
