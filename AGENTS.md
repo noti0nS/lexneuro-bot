@@ -3,12 +3,21 @@
 ## Quick commands
 
 ```bash
+# Linux/macOS (via uv)
 uv run pytest                          # run all tests
 uv run pytest tests/test_bot_utils.py  # run one file
 uv run basedpyright src tests          # typecheck
 uv run ruff check .                    # lint
 uv run ruff format --check .           # check formatting
 uv run python main.py                  # run the bot
+
+# Windows (uv trampoline is broken — use .venv/Scripts/ directly)
+.venv\Scripts\python.exe -m pytest     # run all tests
+.venv\Scripts\python.exe -m pytest tests\test_bot_utils.py
+.venv\Scripts\python.exe -m basedpyright src tests
+.venv\Scripts\ruff.exe check .
+.venv\Scripts\ruff.exe format --check .
+.venv\Scripts\python.exe main.py
 ```
 
 - `main.py` → `src/main.py:run()` → `src/bot.py:create_discord_bot()` — this is the bot lifecycle.
@@ -36,7 +45,7 @@ uv run python main.py                  # run the bot
 
 - **Python 3.13+** required (`.python-version`).
 - Package manager: `uv` (`uv.lock` committed, `pyproject.toml` has dependencies).
-- **All commands go through `uv run`**, e.g. `uv run pytest`, `uv run python ...`. Never use a bare host `python` — it may not exist or be the wrong version. `uv` manages the isolated `.venv/`.
+- **All commands go through `uv run`** on Linux/macOS, or `.venv\Scripts\*.exe` on Windows. Never use a bare host `python` — it may not exist or be the wrong version. `uv` manages the isolated `.venv/`.
 - Type checker: **basedpyright** (`pyrightconfig.json`).
 - Linter/formatter: **ruff**.
 
