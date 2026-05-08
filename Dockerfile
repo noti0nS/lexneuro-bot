@@ -19,5 +19,6 @@ RUN pip install --no-cache-dir uv \
     && pip uninstall uv -y
 
 COPY main.py .
+COPY src/ src/
 
 CMD ["python", "main.py"]
