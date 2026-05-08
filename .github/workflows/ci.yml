@@ -1,10 +1,24 @@
-name: CI/CD
+name: CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/*"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/*"
 
 env:
   PYTHON_VERSION: "3.13"
