@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -12,9 +13,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", "-c", default="config.yaml")
+
 
 async def main() -> None:
-    config = get_config()
+    config = get_config(parser.parse_args().config)
     logging.info(
         "Loaded config:\n%s",
         json.dumps(
