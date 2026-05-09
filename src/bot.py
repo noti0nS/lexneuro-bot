@@ -445,7 +445,21 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     len(messages),
                     use_plain_responses,
                 )
-                async with new_msg.channel.typing():
+
+                typing_ctx = new_msg.channel.typing()
+                typing_active = False
+                try:
+                    await typing_ctx.__aenter__()
+                    typing_active = True
+                except discord.HTTPException as e:
+                    if e.status != 429:
+                        raise
+                    logging.debug(
+                        "Skipping typing indicator due to rate limit (channel=%s)",
+                        new_msg.channel.id,
+                    )
+
+                try:
                     async for chunk in await openai_client.chat.completions.create(
                         **build_openai_chat_completion_kwargs(
                             openai_config, messages[::-1], stream=True
@@ -505,6 +519,9 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                             )
                             response_embed.color = EMBED_COLOR_COMPLETE
                             await reply_helper(embed=response_embed)
+                finally:
+                    if typing_active:
+                        await typing_ctx.__aexit__(None, None, None)
                 logging.info(
                     "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
                     new_msg.author.id,
@@ -542,9 +559,6 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                         new_msg.author.id,
                         openai_kwargs["model"],
                         rl_headers,
-                    )
-                    await new_msg.channel.send(
-                        "Estou sendo limitado pelo Discord. Tente novamente em alguns segundos."
                     )
                 else:
                     logging.exception(
