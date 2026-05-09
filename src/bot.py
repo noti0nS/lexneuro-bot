@@ -471,7 +471,8 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
 
                         start_next_msg = (
                             response_contents == []
-                            or len(response_contents[-1] + new_content) > max_message_length
+                            or len(response_contents[-1] + new_content)
+                            > max_message_length
                         )
                         if start_next_msg:
                             response_contents.append("")
@@ -492,12 +493,16 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                         for content in response_contents:
                             sanitized = sanitize_discord_markdown(content)
                             await reply_helper(
-                                view=LayoutView().add_item(TextDisplay(content=sanitized))
+                                view=LayoutView().add_item(
+                                    TextDisplay(content=sanitized)
+                                )
                             )
                     else:
                         assert response_embed is not None
                         for content in response_contents:
-                            response_embed.description = sanitize_discord_markdown(content)
+                            response_embed.description = sanitize_discord_markdown(
+                                content
+                            )
                             response_embed.color = EMBED_COLOR_COMPLETE
                             await reply_helper(embed=response_embed)
                 logging.info(
@@ -521,14 +526,17 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
 
             except discord.HTTPException as e:
                 if e.status == 429:
-                    rl_headers = {k: e.response.headers.get(k) for k in (
-                        "X-RateLimit-Limit",
-                        "X-RateLimit-Remaining",
-                        "X-RateLimit-Reset",
-                        "X-RateLimit-Reset-After",
-                        "X-RateLimit-Scope",
-                        "Retry-After",
-                    )}
+                    rl_headers = {
+                        k: e.response.headers.get(k)
+                        for k in (
+                            "X-RateLimit-Limit",
+                            "X-RateLimit-Remaining",
+                            "X-RateLimit-Reset",
+                            "X-RateLimit-Reset-After",
+                            "X-RateLimit-Scope",
+                            "Retry-After",
+                        )
+                    }
                     logging.exception(
                         "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
                         new_msg.author.id,
