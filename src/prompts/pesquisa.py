@@ -20,8 +20,6 @@ em formato ABNT, sem exigir explicações adicionais.
 atingir essa proporção aproximada de texto).
 - Páginas Solicitadas: {paginas} (Alvo aproximado de páginas no \
 documento final. Priorize este número sobre a extensão se houver conflito).
-- Modo de Pensamento Ativo: {modo_pensamento} (Se True, explore teses \
-minoritárias e debates profundos).
 
 ### DOMÍNIOS:
 - Se o tema for jurídico: produza um artigo acadêmico com doutrina, \
@@ -79,7 +77,6 @@ def build_pesquisa_messages(
     tema: str,
     extensao: str = "padrao",
     paginas: int = 3,
-    modo_pensamento: bool = False,
 ) -> list[dict[str, Any]]:
     extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
 
@@ -87,7 +84,6 @@ def build_pesquisa_messages(
         tema=tema,
         extensao_label=extensao_label,
         paginas=paginas,
-        modo_pensamento=modo_pensamento,
     )
 
     abnt_reference = load_abnt_reference()

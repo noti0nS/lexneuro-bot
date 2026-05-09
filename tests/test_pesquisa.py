@@ -20,13 +20,11 @@ def test_build_messages_all_params() -> None:
         tema="alvará judicial",
         extensao="completo",
         paginas=10,
-        modo_pensamento=True,
     )
     system = messages[0]["content"]
     assert "alvará judicial" in system
     assert "Dossiê Completo" in system
     assert "10" in system
-    assert "True" in system
 
 
 def test_build_messages_paginas_in_prompt() -> None:
@@ -44,16 +42,6 @@ def test_build_messages_extensao_completo() -> None:
     assert "Dossiê Completo" in messages[0]["content"]
 
 
-def test_build_messages_modo_pensamento_true() -> None:
-    messages = build_pesquisa_messages(tema="test", modo_pensamento=True)
-    assert "True" in messages[0]["content"]
-
-
-def test_build_messages_modo_pensamento_false() -> None:
-    messages = build_pesquisa_messages(tema="test", modo_pensamento=False)
-    assert "False" in messages[0]["content"]
-
-
 def test_build_messages_no_contexto_param() -> None:
     import inspect
 
@@ -66,6 +54,13 @@ def test_build_messages_no_instrucoes_extras_param() -> None:
 
     sig = inspect.signature(build_pesquisa_messages)
     assert "instrucoes_extras" not in sig.parameters
+
+
+def test_build_messages_no_modo_pensamento_param() -> None:
+    import inspect
+
+    sig = inspect.signature(build_pesquisa_messages)
+    assert "modo_pensamento" not in sig.parameters
 
 
 def test_build_messages_includes_abnt_reference() -> None:
