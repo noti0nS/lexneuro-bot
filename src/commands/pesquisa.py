@@ -69,12 +69,6 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
 
 ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
 
-CONTEXTO_CHOICES = [
-    discord.app_commands.Choice(name="🎓 Acadêmico / ABNT", value="academico"),
-    discord.app_commands.Choice(name="⚖️ NPJ / Peça Jurídica", value="npj"),
-    discord.app_commands.Choice(name="💻 Programação / Neuro", value="programacao"),
-]
-
 EXTENSAO_CHOICES = [
     discord.app_commands.Choice(name="Direto ao Ponto (~1 pág. / 500w)", value="curto"),
     discord.app_commands.Choice(name="Padrão (~3 págs. / 1.500w)", value="padrao"),
@@ -187,30 +181,25 @@ def register_pesquisa_command(
 ) -> None:
     @discord_bot.tree.command(
         name="pesquisa",
-        description="Gere um documento acadêmico ou jurídico a partir de um tema",
+        description="Gere um documento de pesquisa formatado em ABNT a partir de um tema",
     )
     @discord.app_commands.describe(
         tema="Tema da pesquisa em texto livre (ex: competência FGTS falecimento)",
-        contexto="Tipo de documento e persona",
         extensao="Nível de detalhe do documento",
         paginas="Número alvo de páginas (1–50). Sobrepõe a extensão se conflitar.",
         modo_pensamento="Ativa modelo de raciocínio (teses minoritárias, debates profundos)",
-        instrucoes_extras="Instruções fragmentárias adicionais (ex: 3 peças: inicial, contestação, reconvenção)",
         format="Formato do arquivo de saída",
     )
     @discord.app_commands.choices(
-        contexto=CONTEXTO_CHOICES,
         extensao=EXTENSAO_CHOICES,
         format=FORMATO_CHOICES,
     )
     async def pesquisa_command(
         interaction: discord.Interaction,
         tema: str,
-        contexto: str = "academico",
         extensao: str = "padrao",
         paginas: int = 3,
         modo_pensamento: bool = False,
-        instrucoes_extras: str | None = None,
         format: discord.app_commands.Choice[str] | None = None,
     ) -> None:
         formato_valor = format.value if format else "docx"
@@ -242,10 +231,9 @@ def register_pesquisa_command(
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, contexto: %s, extensao: %s, paginas: %s, modo_pensamento: %s, formato: %s)",
+            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, modo_pensamento: %s, formato: %s)",
             interaction.user.id,
             tema[:80],
-            contexto,
             extensao,
             paginas,
             modo_pensamento,
@@ -254,11 +242,9 @@ def register_pesquisa_command(
 
         messages: list[dict[str, Any]] = build_pesquisa_messages(
             tema=tema,
-            contexto=contexto,
             extensao=extensao,
             paginas=paginas,
             modo_pensamento=modo_pensamento,
-            instrucoes_extras=instrucoes_extras,
         )
 
         research_config = state.config.get("research", {})
