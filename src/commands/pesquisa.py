@@ -15,6 +15,7 @@ from ..helpers.content import get_completion_text
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
 from ..helpers.search import fetch_page_content, search_topics
+from ..helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 from ..prompts.pesquisa import build_pesquisa_messages, build_refinement_message
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
@@ -68,25 +69,6 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
 ]
 
 ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
-
-CONTEXTO_CHOICES = [
-    discord.app_commands.Choice(name="🎓 Acadêmico / ABNT", value="academico"),
-    discord.app_commands.Choice(name="⚖️ NPJ / Peça Jurídica", value="npj"),
-    discord.app_commands.Choice(name="💻 Programação / Neuro", value="programacao"),
-]
-
-EXTENSAO_CHOICES = [
-    discord.app_commands.Choice(name="Direto ao Ponto (~1 pág. / 500w)", value="curto"),
-    discord.app_commands.Choice(name="Padrão (~3 págs. / 1.500w)", value="padrao"),
-    discord.app_commands.Choice(
-        name="Dossiê Completo (5+ págs. / 2.500+w)", value="completo"
-    ),
-]
-
-FORMATO_CHOICES = [
-    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
-]
 
 
 def build_pesquisa_filename(title: str, output_format: str) -> str:
@@ -187,30 +169,23 @@ def register_pesquisa_command(
 ) -> None:
     @discord_bot.tree.command(
         name="pesquisa",
-        description="Gere um documento acadêmico ou jurídico a partir de um tema",
+        description="Gere um documento de pesquisa formatado em ABNT a partir de um tema",
     )
     @discord.app_commands.describe(
         tema="Tema da pesquisa em texto livre (ex: competência FGTS falecimento)",
-        contexto="Tipo de documento e persona",
         extensao="Nível de detalhe do documento",
         paginas="Número alvo de páginas (1–50). Sobrepõe a extensão se conflitar.",
-        modo_pensamento="Ativa modelo de raciocínio (teses minoritárias, debates profundos)",
-        instrucoes_extras="Instruções fragmentárias adicionais (ex: 3 peças: inicial, contestação, reconvenção)",
         format="Formato do arquivo de saída",
     )
     @discord.app_commands.choices(
-        contexto=CONTEXTO_CHOICES,
         extensao=EXTENSAO_CHOICES,
         format=FORMATO_CHOICES,
     )
     async def pesquisa_command(
         interaction: discord.Interaction,
         tema: str,
-        contexto: str = "academico",
         extensao: str = "padrao",
         paginas: int = 3,
-        modo_pensamento: bool = False,
-        instrucoes_extras: str | None = None,
         format: discord.app_commands.Choice[str] | None = None,
     ) -> None:
         formato_valor = format.value if format else "docx"
@@ -242,23 +217,18 @@ def register_pesquisa_command(
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, contexto: %s, extensao: %s, paginas: %s, modo_pensamento: %s, formato: %s)",
+            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, formato: %s)",
             interaction.user.id,
             tema[:80],
-            contexto,
             extensao,
             paginas,
-            modo_pensamento,
             formato_valor,
         )
 
         messages: list[dict[str, Any]] = build_pesquisa_messages(
             tema=tema,
-            contexto=contexto,
             extensao=extensao,
             paginas=paginas,
-            modo_pensamento=modo_pensamento,
-            instrucoes_extras=instrucoes_extras,
         )
 
         research_config = state.config.get("research", {})
@@ -267,21 +237,12 @@ def register_pesquisa_command(
         max_pages = research_config.get("max_page_fetches", 5)
         refinement_enabled = research_config.get("refinement_enabled", True)
 
-        curr_model = state.curr_model
-        if modo_pensamento:
-            thinking_model = research_config.get("thinking_model")
-            if thinking_model:
-                curr_model = thinking_model
-            else:
-                logging.warning(
-                    "modo_pensamento=True but no research.thinking_model configured, falling back to %s (user ID: %s)",
-                    curr_model,
-                    interaction.user.id,
-                )
+        thinking_model = research_config.get("thinking_model")
+        curr_model = thinking_model if thinking_model else state.curr_model
 
         openai_client, openai_config = get_openai_config(state.config, curr_model)
 
-        reasoning_effort = "high" if modo_pensamento else None
+        reasoning_effort: str | None = "high" if thinking_model else None
 
         raw_output = ""
         request_started_at = datetime.now().timestamp()

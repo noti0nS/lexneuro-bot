@@ -1,45 +1,11 @@
-import logging
-import os
-import sqlite3
-
-
-def _db_path() -> str:
-    return os.path.join("data", "status.db")
-
-
-_db_initialized = False
-
-
-def init_db() -> None:
-    global _db_initialized
-    if _db_initialized:
-        return
-
-    os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect(_db_path())
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS status_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    _db_initialized = True
-    logging.info("Status DB initialized at %s", _db_path())
+from ..db import get_connection
 
 
 def add_message(content: str, max_history: int = 100) -> None:
     if not content.strip():
         return
 
-    conn = sqlite3.connect(_db_path())
+    conn = get_connection()
     try:
         conn.execute("INSERT INTO status_history (content) VALUES (?)", (content,))
         conn.commit()
@@ -55,7 +21,7 @@ def add_message(content: str, max_history: int = 100) -> None:
 
 
 def get_latest_message() -> tuple[str, str] | None:
-    conn = sqlite3.connect(_db_path())
+    conn = get_connection()
     try:
         row = conn.execute(
             "SELECT content, created_at FROM status_history ORDER BY id DESC LIMIT 1"
@@ -68,7 +34,7 @@ def get_latest_message() -> tuple[str, str] | None:
 
 
 def get_random_message() -> str | None:
-    conn = sqlite3.connect(_db_path())
+    conn = get_connection()
     try:
         row = conn.execute(
             "SELECT content FROM status_history ORDER BY RANDOM() LIMIT 1"
@@ -79,7 +45,7 @@ def get_random_message() -> str | None:
 
 
 def get_message_count() -> int:
-    conn = sqlite3.connect(_db_path())
+    conn = get_connection()
     try:
         row = conn.execute("SELECT COUNT(*) FROM status_history").fetchone()
         return row[0] if row else 0

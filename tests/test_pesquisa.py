@@ -1,16 +1,11 @@
 from src.prompts.pesquisa import (
-    CONTEXTO_LABELS,
     EXTENSAO_LABELS,
     REFINEMENT_PROMPT,
     build_pesquisa_messages,
     build_refinement_message,
 )
-from src.commands.pesquisa import (
-    CONTEXTO_CHOICES,
-    EXTENSAO_CHOICES,
-    FORMATO_CHOICES,
-    build_pesquisa_filename,
-)
+from src.commands.pesquisa import build_pesquisa_filename
+from src.helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 
 
 def test_build_messages_defaults() -> None:
@@ -23,35 +18,18 @@ def test_build_messages_defaults() -> None:
 def test_build_messages_all_params() -> None:
     messages = build_pesquisa_messages(
         tema="alvará judicial",
-        contexto="npj",
         extensao="completo",
         paginas=10,
-        modo_pensamento=True,
-        instrucoes_extras="3 peças: inicial, contestação, reconvenção",
     )
     system = messages[0]["content"]
     assert "alvará judicial" in system
-    assert "NPJ" in system
-    assert "advogado sênior" in system
     assert "Dossiê Completo" in system
     assert "10" in system
-    assert "True" in system
-    assert "3 peças" in system
 
 
 def test_build_messages_paginas_in_prompt() -> None:
     messages = build_pesquisa_messages(tema="test", paginas=7)
     assert "7" in messages[0]["content"]
-
-
-def test_build_messages_npj_context() -> None:
-    messages = build_pesquisa_messages(tema="test", contexto="npj")
-    assert "advogado sênior" in messages[0]["content"]
-
-
-def test_build_messages_programacao_context() -> None:
-    messages = build_pesquisa_messages(tema="test", contexto="programacao")
-    assert "documentação técnica" in messages[0]["content"]
 
 
 def test_build_messages_extensao_curto() -> None:
@@ -64,26 +42,25 @@ def test_build_messages_extensao_completo() -> None:
     assert "Dossiê Completo" in messages[0]["content"]
 
 
-def test_build_messages_modo_pensamento_true() -> None:
-    messages = build_pesquisa_messages(tema="test", modo_pensamento=True)
-    assert "True" in messages[0]["content"]
+def test_build_messages_no_contexto_param() -> None:
+    import inspect
+
+    sig = inspect.signature(build_pesquisa_messages)
+    assert "contexto" not in sig.parameters
 
 
-def test_build_messages_modo_pensamento_false() -> None:
-    messages = build_pesquisa_messages(tema="test", modo_pensamento=False)
-    assert "False" in messages[0]["content"]
+def test_build_messages_no_instrucoes_extras_param() -> None:
+    import inspect
+
+    sig = inspect.signature(build_pesquisa_messages)
+    assert "instrucoes_extras" not in sig.parameters
 
 
-def test_build_messages_instrucoes_extras() -> None:
-    messages = build_pesquisa_messages(
-        tema="test", instrucoes_extras="incluir quadro comparativo"
-    )
-    assert "incluir quadro comparativo" in messages[0]["content"]
+def test_build_messages_no_modo_pensamento_param() -> None:
+    import inspect
 
-
-def test_build_messages_instrucoes_extras_none() -> None:
-    messages = build_pesquisa_messages(tema="test", instrucoes_extras=None)
-    assert "Nenhuma" in messages[0]["content"]
+    sig = inspect.signature(build_pesquisa_messages)
+    assert "modo_pensamento" not in sig.parameters
 
 
 def test_build_messages_includes_abnt_reference() -> None:
@@ -115,16 +92,8 @@ def test_refinement_prompt_is_constant() -> None:
     assert build_refinement_message() == REFINEMENT_PROMPT
 
 
-def test_contexto_labels_keys() -> None:
-    assert set(CONTEXTO_LABELS.keys()) == {"academico", "npj", "programacao"}
-
-
 def test_extensao_labels_keys() -> None:
     assert set(EXTENSAO_LABELS.keys()) == {"curto", "padrao", "completo"}
-
-
-def test_contexto_choices_count() -> None:
-    assert len(CONTEXTO_CHOICES) == 3
 
 
 def test_extensao_choices_count() -> None:
