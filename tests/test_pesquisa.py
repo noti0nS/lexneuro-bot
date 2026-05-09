@@ -4,11 +4,8 @@ from src.prompts.pesquisa import (
     build_pesquisa_messages,
     build_refinement_message,
 )
-from src.commands.pesquisa import (
-    EXTENSAO_CHOICES,
-    FORMATO_CHOICES,
-    build_pesquisa_filename,
-)
+from src.commands.pesquisa import build_pesquisa_filename
+from src.helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 
 
 def test_build_messages_defaults() -> None:

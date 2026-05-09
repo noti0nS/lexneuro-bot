@@ -8,27 +8,30 @@ from unittest import mock
 
 import pytest
 
-from src.helpers import status_db, status_generator
+from src.helpers import status_generator
 from src.helpers.status_db import (
     add_message,
     get_latest_message,
     get_message_count,
     get_random_message,
-    init_db,
 )
 
 
 @pytest.fixture
 def temp_status_db(monkeypatch: pytest.MonkeyPatch) -> str:
     tmpdir = tempfile.mkdtemp()
-    db_path = os.path.join(tmpdir, "status.db")
+    db_path = os.path.join(tmpdir, "bot.db")
 
-    def _temp_db_path() -> str:
+    import src.db as db_module
+
+    def _temp_db_path(db_name: str = "bot.db") -> str:
         return db_path
 
-    monkeypatch.setattr(status_db, "_db_path", _temp_db_path)
-    monkeypatch.setattr(status_db, "_db_initialized", False)
-    init_db()
+    monkeypatch.setattr(db_module, "get_db_path", _temp_db_path)
+
+    from src.db import init_db as db_init_db
+
+    db_init_db()
     return db_path
 
 
@@ -96,8 +99,10 @@ class TestStatusDB:
             conn.close()
 
     def test_init_db_is_idempotent(self, temp_status_db: str) -> None:
-        init_db()
-        init_db()
+        from src.db import init_db as db_init_db
+
+        db_init_db()
+        db_init_db()
         assert get_message_count() == 0
 
 

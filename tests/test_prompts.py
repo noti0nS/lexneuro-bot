@@ -3,7 +3,6 @@ from src.prompts import (
     build_abnt_messages,
     build_system_prompt,
     load_abnt_reference,
-    load_discord_markdown_reference,
 )
 
 
@@ -23,20 +22,23 @@ def test_build_abnt_messages_includes_system_and_filename() -> None:
     assert '"score": numero_entre_0_e_1' in messages[1]["content"]
 
 
-def test_build_system_prompt_always_includes_discord_reference() -> None:
-    system_prompt = build_system_prompt(None)
-    markdown_reference = load_discord_markdown_reference()
-
-    assert "POLÍTICA RESTRITIVA DE MARKDOWN (DISCORD)" in system_prompt
-    assert markdown_reference.splitlines()[0] in system_prompt
-
-
-def test_build_system_prompt_preserves_existing_prompt_text() -> None:
+def test_build_system_prompt_returns_base_prompt_when_given() -> None:
     base_prompt = "Hoje é {date}"
     system_prompt = build_system_prompt(base_prompt)
 
-    assert system_prompt.startswith(base_prompt)
-    assert "POLÍTICA RESTRITIVA DE MARKDOWN (DISCORD)" in system_prompt
+    assert system_prompt == base_prompt
+
+
+def test_build_system_prompt_returns_empty_when_none() -> None:
+    system_prompt = build_system_prompt(None)
+
+    assert system_prompt == ""
+
+
+def test_build_system_prompt_strips_whitespace() -> None:
+    system_prompt = build_system_prompt("  hello  ")
+
+    assert system_prompt == "hello"
 
 
 def test_build_abnt_messages_adds_truncation_notice() -> None:

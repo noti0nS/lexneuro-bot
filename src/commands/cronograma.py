@@ -14,41 +14,13 @@ from ..config import (
 )
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
+from ..helpers.ui import (
+    FORMAT_EMOJIS,
+    FORMAT_LABELS,
+    PYTHON_WEEKDAY,
+    WEEKDAY_OPTIONS,
+)
 from ..prompts.cronograma import build_cronograma_messages, format_date_pt
-
-WEEKDAY_OPTIONS: list[discord.app_commands.Choice[str]] = [
-    discord.app_commands.Choice(name="Segunda-feira", value="segunda"),
-    discord.app_commands.Choice(name="Terça-feira", value="terca"),
-    discord.app_commands.Choice(name="Quarta-feira", value="quarta"),
-    discord.app_commands.Choice(name="Quinta-feira", value="quinta"),
-    discord.app_commands.Choice(name="Sexta-feira", value="sexta"),
-    discord.app_commands.Choice(name="Sábado", value="sabado"),
-    discord.app_commands.Choice(name="Domingo", value="domingo"),
-]
-
-PYTHON_WEEKDAY: dict[str, int] = {
-    "segunda": 0,
-    "terca": 1,
-    "quarta": 2,
-    "quinta": 3,
-    "sexta": 4,
-    "sabado": 5,
-    "domingo": 6,
-}
-
-_FORMAT_LABELS: dict[str, str] = {
-    "pdf": "PDF",
-    "md": "Markdown",
-    "docx": "DOCX",
-    "odt": "ODT",
-}
-
-_FORMAT_EMOJIS: dict[str, str] = {
-    "pdf": "\U0001f4c4",
-    "md": "\U0001f4dd",
-    "docx": "\U0001f4d8",
-    "odt": "\U0001f4d7",
-}
 
 
 def parse_test_date(raw: str) -> date:
@@ -94,7 +66,6 @@ async def _generate_cronograma_content(
     messages: list[dict[str, str]],
     user_id: int,
 ) -> str | None:
-    """Stream cronograma progress into the channel/thread and return the full content."""
     max_message_length = 2000
     response_chunks: list[str] = []
     finish_reason = None
@@ -314,7 +285,7 @@ class FormatSelectView(discord.ui.View):
         self._calendar_dates = calendar_dates
 
         for fmt in ("pdf", "md", "docx", "odt"):
-            self.add_item(FormatButton(fmt, _FORMAT_LABELS[fmt], _FORMAT_EMOJIS[fmt]))
+            self.add_item(FormatButton(fmt, FORMAT_LABELS[fmt], FORMAT_EMOJIS[fmt]))
 
     async def handle_format(self, interaction: discord.Interaction, fmt: str) -> None:
         for child in self.children:

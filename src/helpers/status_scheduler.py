@@ -5,12 +5,8 @@ import discord
 from discord.ext import commands, tasks
 
 from ..config import get_config, get_openai_config
-from .status_db import (
-    add_message,
-    get_latest_message,
-    get_random_message,
-    init_db,
-)
+from ..db import init_db
+from .status_db import add_message, get_latest_message, get_random_message
 from .status_generator import generate_status_message
 
 

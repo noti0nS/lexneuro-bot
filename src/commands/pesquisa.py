@@ -15,6 +15,7 @@ from ..helpers.content import get_completion_text
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
 from ..helpers.search import fetch_page_content, search_topics
+from ..helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 from ..prompts.pesquisa import build_pesquisa_messages, build_refinement_message
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
@@ -68,19 +69,6 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
 ]
 
 ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
-
-EXTENSAO_CHOICES = [
-    discord.app_commands.Choice(name="Direto ao Ponto (~1 pág. / 500w)", value="curto"),
-    discord.app_commands.Choice(name="Padrão (~3 págs. / 1.500w)", value="padrao"),
-    discord.app_commands.Choice(
-        name="Dossiê Completo (5+ págs. / 2.500+w)", value="completo"
-    ),
-]
-
-FORMATO_CHOICES = [
-    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
-]
 
 
 def build_pesquisa_filename(title: str, output_format: str) -> str:

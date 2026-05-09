@@ -3,11 +3,10 @@ from datetime import date
 import pytest
 
 from src.commands.cronograma import (
-    WEEKDAY_OPTIONS,
-    PYTHON_WEEKDAY,
     compute_study_window,
     parse_test_date,
 )
+from src.helpers.ui import WEEKDAY_OPTIONS, PYTHON_WEEKDAY
 from src.prompts.cronograma import (
     CRONOGAMA_SYSTEM_PROMPT,
     build_cronograma_messages,
