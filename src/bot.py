@@ -141,6 +141,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     config = initial_config or get_config()
     curr_model = next(iter(config["models"]))
     msg_nodes: dict[int, MsgNode] = {}
+    channel_locks: dict[int, asyncio.Lock] = {}
     state = types.SimpleNamespace(config=config, curr_model=curr_model)
 
     intents = discord.Intents.default()
@@ -182,6 +183,10 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
             return
 
         if not user_has_permission(new_msg.author, new_msg.channel, state.config):
+            return
+
+        channel_lock = channel_locks.setdefault(new_msg.channel.id, asyncio.Lock())
+        if channel_lock.locked():
             return
 
         openai_client, openai_config = get_openai_config(state.config, state.curr_model)
@@ -431,94 +436,122 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
 
         request_started_at = datetime.now().timestamp()
         first_chunk_logged = False
-        try:
-            logging.info(
-                "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
-                new_msg.author.id,
-                openai_kwargs["model"],
-                len(messages),
-                use_plain_responses,
-            )
-            async with new_msg.channel.typing():
-                async for chunk in await openai_client.chat.completions.create(
-                    **build_openai_chat_completion_kwargs(
-                        openai_config, messages[::-1], stream=True
-                    )
-                ):
-                    if finish_reason is not None:
-                        break
-
-                    if not (choice := chunk.choices[0] if chunk.choices else None):
-                        continue
-
-                    finish_reason = choice.finish_reason
-                    prev_content = curr_content or ""
-                    curr_content = choice.delta.content or ""
-                    new_content = (
-                        prev_content
-                        if finish_reason is None
-                        else (prev_content + curr_content)
-                    )
-
-                    if response_contents == [] and new_content == "":
-                        continue
-
-                    start_next_msg = (
-                        response_contents == []
-                        or len(response_contents[-1] + new_content) > max_message_length
-                    )
-                    if start_next_msg:
-                        response_contents.append("")
-
-                    response_contents[-1] += new_content
-                    if not first_chunk_logged and (
-                        new_content != "" or finish_reason is not None
+        async with channel_lock:
+            try:
+                logging.info(
+                    "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
+                    new_msg.author.id,
+                    openai_kwargs["model"],
+                    len(messages),
+                    use_plain_responses,
+                )
+                async with new_msg.channel.typing():
+                    async for chunk in await openai_client.chat.completions.create(
+                        **build_openai_chat_completion_kwargs(
+                            openai_config, messages[::-1], stream=True
+                        )
                     ):
-                        logging.info(
-                            "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
-                            new_msg.author.id,
-                            openai_kwargs["model"],
-                            datetime.now().timestamp() - request_started_at,
-                        )
-                        first_chunk_logged = True
+                        if finish_reason is not None:
+                            break
 
-                if use_plain_responses:
-                    for content in response_contents:
-                        sanitized = sanitize_discord_markdown(content)
-                        await reply_helper(
-                            view=LayoutView().add_item(TextDisplay(content=sanitized))
+                        if not (choice := chunk.choices[0] if chunk.choices else None):
+                            continue
+
+                        finish_reason = choice.finish_reason
+                        prev_content = curr_content or ""
+                        curr_content = choice.delta.content or ""
+                        new_content = (
+                            prev_content
+                            if finish_reason is None
+                            else (prev_content + curr_content)
                         )
+
+                        if response_contents == [] and new_content == "":
+                            continue
+
+                        start_next_msg = (
+                            response_contents == []
+                            or len(response_contents[-1] + new_content) > max_message_length
+                        )
+                        if start_next_msg:
+                            response_contents.append("")
+
+                        response_contents[-1] += new_content
+                        if not first_chunk_logged and (
+                            new_content != "" or finish_reason is not None
+                        ):
+                            logging.info(
+                                "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
+                                new_msg.author.id,
+                                openai_kwargs["model"],
+                                datetime.now().timestamp() - request_started_at,
+                            )
+                            first_chunk_logged = True
+
+                    if use_plain_responses:
+                        for content in response_contents:
+                            sanitized = sanitize_discord_markdown(content)
+                            await reply_helper(
+                                view=LayoutView().add_item(TextDisplay(content=sanitized))
+                            )
+                    else:
+                        assert response_embed is not None
+                        for content in response_contents:
+                            response_embed.description = sanitize_discord_markdown(content)
+                            response_embed.color = EMBED_COLOR_COMPLETE
+                            await reply_helper(embed=response_embed)
+                logging.info(
+                    "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                    new_msg.author.id,
+                    openai_kwargs["model"],
+                    finish_reason,
+                    len(response_contents),
+                    datetime.now().timestamp() - request_started_at,
+                )
+
+            except discord.DiscordServerError:
+                await new_msg.channel.send(
+                    "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
+                )
+                logging.exception(
+                    "Discord 503 error while generating response (user ID: %s, model: %s)",
+                    new_msg.author.id,
+                    openai_kwargs["model"],
+                )
+
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    rl_headers = {k: e.response.headers.get(k) for k in (
+                        "X-RateLimit-Limit",
+                        "X-RateLimit-Remaining",
+                        "X-RateLimit-Reset",
+                        "X-RateLimit-Reset-After",
+                        "X-RateLimit-Scope",
+                        "Retry-After",
+                    )}
+                    logging.exception(
+                        "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
+                        new_msg.author.id,
+                        openai_kwargs["model"],
+                        rl_headers,
+                    )
+                    await new_msg.channel.send(
+                        "Estou sendo limitado pelo Discord. Tente novamente em alguns segundos."
+                    )
                 else:
-                    assert response_embed is not None
-                    for content in response_contents:
-                        response_embed.description = sanitize_discord_markdown(content)
-                        response_embed.color = EMBED_COLOR_COMPLETE
-                        await reply_helper(embed=response_embed)
-            logging.info(
-                "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
-                new_msg.author.id,
-                openai_kwargs["model"],
-                finish_reason,
-                len(response_contents),
-                datetime.now().timestamp() - request_started_at,
-            )
+                    logging.exception(
+                        "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
+                        e.status,
+                        new_msg.author.id,
+                        openai_kwargs["model"],
+                    )
 
-        except discord.DiscordServerError:
-            await new_msg.channel.send(
-                "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
-            )
-            logging.exception(
-                "Discord 503 error while generating response (user ID: %s, model: %s)",
-                new_msg.author.id,
-                openai_kwargs["model"],
-            )
-
-        except Exception:
-            logging.exception(
-                "Error while generating response (user ID: %s, model: %s)",
-                new_msg.author.id,
-                openai_kwargs["model"],
-            )
+            except Exception:
+                logging.exception(
+                    "Error while generating response (user ID: %s, model: %s)",
+                    new_msg.author.id,
+                    openai_kwargs["model"],
+                )
 
         for response_msg in response_msgs:
             msg_nodes[response_msg.id].text = "".join(response_contents)
