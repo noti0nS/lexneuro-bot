@@ -79,7 +79,7 @@ async def generate_status_message(
             logging.warning("Status generation returned empty content")
             return None
 
-        result = raw.strip().strip('"\'').strip()[:MAX_STATUS_CHARS]
+        result = raw.strip().strip("\"'").strip()[:MAX_STATUS_CHARS]
         logging.info("Status generated: %s", result)
         return result
 
