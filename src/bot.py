@@ -13,6 +13,7 @@ from discord.ui import LayoutView, TextDisplay
 
 from .commands.abnt import register_abnt_command
 from .commands.cronograma import register_cronograma_command
+from .commands.status import register_status_commands
 from .helpers.status_scheduler import start_status_scheduler
 from .commands.model import register_model_command
 from .commands.pesquisa import register_pesquisa_command
@@ -157,6 +158,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     httpx_client = httpx.AsyncClient()
 
     register_model_command(discord_bot, state)
+    register_status_commands(discord_bot, state)
     register_abnt_command(discord_bot, state, httpx_client, user_has_permission)
     register_cronograma_command(discord_bot, state)
     register_pesquisa_command(discord_bot, state)

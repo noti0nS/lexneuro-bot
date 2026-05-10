@@ -44,6 +44,40 @@ STATUS_PROMPTS = [
         "Pode ser um trocadilho legal, um aforismo fake, ou uma verdade universal de quem faz concurso. "
         "Max 80 caracteres. Responda APENAS o status em pt-br, sem pontuação extra."
     ),
+    (
+        "Gere 1 status curto e engraçado pra LexNeuro sobre programar enquanto estuda Direito. "
+        "Ex: 'debugando meu código e minha vida', 'stack overflow vs jurisprudence', "
+        "ou 'ERRO 403: Motivação não encontrada'. Seja criativo. Max 80 caracteres. "
+        "Responda APENAS o status em pt-br."
+    ),
+    (
+        "Crie 1 status pra LexNeuro que misture programação e advocacia de um jeito absurdo. "
+        "Pense em: git commit 'litígio finalizado', 'README do Tribunal', "
+        "ou 'deployei meu diploma e crashou'. Engraçado e curto. Max 80 caracteres. "
+        "Responda APENAS o status em pt-br."
+    ),
+    (
+        "Gere 1 status sobre ser programador e estudante de Direito ao mesmo tempo. "
+        "Algo tipo: 'NullPointerException: jurídico não encontrado', "
+        "ou 'Stack overflow no tribunal'. Divertido e curto. Max 80 caracteres. "
+        "Responda APENAS o status em pt-br."
+    ),
+    (
+        "Imagine um status de Discord que um devjurista colocaria: "
+        "metáforas de código + Direito, tipo 'meu nome é main() e sou especialista em main()'. "
+        "Curto e engraçado. Max 80 caracteres. Responda APENAS o status em pt-br."
+    ),
+    (
+        "Crie 1 status pra LexNeuro sobre o ciclo infinito de estudar, programar e sobreviver. "
+        "Ex: 'while (vivo) { estudar(); programar(); dormir(); }' ou 'Stack overflow no tribunal'. "
+        "Max 80 caracteres. Responda APENAS o status em pt-br."
+    ),
+    (
+        "Gere 1 micro-status que um estudante de Direito que também programa diria. "
+        "Pense em: 'Exception: NotaFiscalException', 'sudo tirar prova', "
+        "ou 'meu cérebro tá em mode readonly'. Curto eSatírico. Max 80 caracteres. "
+        "Responda APENAS o status em pt-br."
+    ),
 ]
 
 MAX_STATUS_CHARS = 128
