@@ -227,6 +227,7 @@ models/
 
 # Private files
 config.yaml
+litellm_config.yaml
 data/
 *.key
 misc/

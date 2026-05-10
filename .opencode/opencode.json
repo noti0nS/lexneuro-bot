@@ -14,7 +14,8 @@
     "webfetch": "allow",
     "read": {
       "*": "allow",
-      "config.yaml": "deny"
+      "config.yaml": "deny",
+      "litellm_config.yaml": "deny"
     },
     "edit": {
       "*": "allow",

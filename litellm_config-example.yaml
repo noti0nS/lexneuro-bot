@@ -1,0 +1,57 @@
+# LiteLLM Proxy Configuration
+# ============================
+# Copy to litellm_config.yaml and fill in your API keys.
+# litellm_config.yaml is gitignored — never commit real keys.
+
+model_list:
+  # --- Brain alias: Groq primary, DeepSeek fallback ---
+  - model_name: "brain"
+    litellm_params:
+      model: groq/llama-4
+      api_key: gsk-...                             # your Groq key
+      rpm: 600
+  - model_name: "brain-fallback"
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: sk-...                              # your DeepSeek key
+
+  # --- Load-balanced alias: two premium providers ---
+  - model_name: "premium"
+    litellm_params:
+      model: openai/gpt-5
+      api_key: sk-proj-...
+      rpm: 200
+  - model_name: "premium"
+    litellm_params:
+      model: anthropic/claude-4-sonnet-20250514
+      api_key: sk-ant-...
+      rpm: 200
+
+  # --- Vision alias ---
+  - model_name: "vision-model"
+    litellm_params:
+      model: openai/gpt-4.1
+      api_key: sk-proj-...
+
+  # --- Wildcard: passes any provider/model string straight through ---
+  - model_name: "*"
+    litellm_params:
+      model: "*"
+
+router_settings:
+  routing_strategy: usage-based-routing
+  num_retries: 2
+  cooldown_time: 60
+
+litellm_settings:
+  drop_params: true
+  allowed_fails: 3
+  fallbacks:
+    - {"brain": ["brain-fallback"]}                # Groq fails → DeepSeek
+    - {"premium": ["brain", "*"]}
+    - {"vision-model": ["premium"]}
+  # success_callback: ["langfuse"]    # enable for observability
+  # failure_callback: ["sentry"]      # enable for error tracking
+
+general_settings:
+  master_key: sk-litellm-master-key
