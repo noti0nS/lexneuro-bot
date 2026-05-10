@@ -72,32 +72,85 @@ Any OpenAI-compatible API:
 
 ## Setup
 
-1. Clone the repo:
+### 1. Discord Developer Portal
 
-```bash
-git clone https://github.com/noti0nS/lexneuro-bot
-cd lexneuro-bot
-```
+You must create a bot application before running the bot:
 
-2. Copy and configure:
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**.
+2. In **Bot** settings, click **Reset Token** (or **Copy**) to get your **bot token**. Paste it into `config.yaml` as `bot_token`.
+3. Copy the **Application ID** (under **General Information**) into `config.yaml` as `client_id`.
+4. Under **Bot > Privileged Gateway Intents**, enable **Message Content Intent** and save. This is required for the bot to read chat messages.
+5. Use the **OAuth2 > URL Generator** to invite the bot to your server:
+   - **Scopes**: `bot`, `applications.commands`
+   - **Bot Permissions**: `Send Messages`, `Read Messages`, `Read Message History`, `Use Slash Commands`, `Attach Files`, `Add Reactions`
+
+   Alternatively, the bot prints a ready-to-use invite URL on startup when `client_id` is set.
+
+Refer to the [Discord developer docs](https://discord.com/developers/docs/quick-start/getting-started) for detailed guidance.
+
+### 2. Configuration
+
+You need two config files — both are gitignored and have commented example templates:
 
 ```bash
 cp config-example.yaml config.yaml
+cp litellm_config-example.yaml litellm_config.yaml
 ```
 
-Fill in `bot_token`, `client_id`, providers, and models. The file is fully commented.
+**`config.yaml`** — bot settings, permissions, LLM providers & models:
 
-3. Run with Docker:
+- `bot_token` / `client_id` — from step 1 above.
+- `providers` — API endpoints and keys for each provider (OpenAI, Groq, OpenRouter, etc.). Leave unused providers empty.
+- `models` — the models available via `/model`, formatted as `provider/model`. The first model listed is the default.
+- `permissions` — restrict bot access by user ID, role ID, or channel ID.
+- `abnt`, `cronograma`, `research` — command-specific tuning knobs.
+- `system_prompt` — overwrite the default personality; `{date}` and `{time}` are replaced at runtime.
+
+**`litellm_config.yaml`** (Docker only) — the [LiteLLM proxy](https://docs.litellm.ai/) config. Defines model aliases, load-balancing, and fallbacks. The example template includes a wildcard passthrough so all `config.yaml` models work out of the box.
+
+**Environment variable overrides** — any provider key can be set via env vars instead of writing it in the YAML:
+
+```
+PROVIDER_OPENAI_API_KEY=sk-...
+PROVIDER_GROQ_API_KEY=gsk-...
+PROVIDER_OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+The pattern is `PROVIDER_{PROVIDER}_API_KEY` and `PROVIDER_{PROVIDER}_BASE_URL` (provider name is uppercased). This is useful for cloud deployments where committing API keys is undesirable.
+
+### 3a. Run with Docker (recommended)
 
 ```bash
 docker compose up
 ```
 
-Or without Docker (requires Python 3.13+ and `uv`):
+This starts two services:
+- **`bot`** — the LexNeuro bot, reading `config.yaml` via a read-only bind mount.
+- **`litellm`** — a LiteLLM proxy sidecar that handles auth, rate limits, load-balancing, and fallbacks across all your providers.
+
+The bot communicates with LiteLLM under the `litellm/` provider prefix. You can still use direct providers (e.g. `openai/gpt-5`) — the wildcard passthrough in `litellm_config.yaml` relays them unchanged.
+
+*Note: the Dockerfile installs `pandoc` and `texlive` for `.docx`/`.odt`/`.pdf` export. The image is heavy (~1.5 GB). If you don't need document export you can slim it down.*
+
+### 3b. Run without Docker
+
+**Requirements:** [Python 3.13+](https://python.org) and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+# Install dependencies
+uv sync
+
+# Run
 uv run python main.py
 ```
+
+Without Docker there is no LiteLLM sidecar — configure providers directly in `config.yaml` (the `litellm_config.yaml` file is unused) and supply API keys via the provider config or environment variables.
+
+**Optional: document export support** — `/pesquisa` exports `.docx` and `.odt`; `/cronograma` exports `.pdf`. These depend on `pandoc` and `texlive` being installed on the host machine. Install them via your system package manager if you need these features.
+
+### 4. Verify
+
+Check the logs on startup. You should see the masked config dump and the bot invite URL. Once the bot is online, try `/model` in any channel the bot can see.
 
 ---
 
