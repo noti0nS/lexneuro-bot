@@ -1,3 +1,4 @@
+import os
 from collections.abc import Mapping
 from typing import Any, TypedDict
 
@@ -74,9 +75,17 @@ def get_openai_config(
     provider, model = provider_slash_model.removesuffix(":vision").split("/", 1)
     provider_config = config["providers"][provider]
 
+    base_url = os.getenv(
+        f"PROVIDER_{provider.upper()}_BASE_URL", provider_config["base_url"]
+    )
+    api_key = os.getenv(
+        f"PROVIDER_{provider.upper()}_API_KEY",
+        provider_config.get("api_key", "sk-no-key-required"),
+    )
+
     openai_client = AsyncOpenAI(
-        base_url=provider_config["base_url"],
-        api_key=provider_config.get("api_key", "sk-no-key-required"),
+        base_url=base_url,
+        api_key=api_key,
     )
 
     model_parameters = config["models"].get(provider_slash_model, None)
@@ -87,7 +96,7 @@ def get_openai_config(
     return openai_client, {
         "model": model,
         "provider": provider,
-        "base_url": provider_config["base_url"],
+        "base_url": base_url,
         "extra_headers": provider_config.get("extra_headers"),
         "extra_query": provider_config.get("extra_query"),
         "extra_body": extra_body,

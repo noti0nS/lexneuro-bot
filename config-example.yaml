@@ -61,6 +61,7 @@ providers:
     api_key:
 
   # LiteLLM proxy (centralized key management + load balancing)
+  # Override base_url via env var: PROVIDER_LITELLM_BASE_URL (set in compose.yaml)
   litellm:
     base_url: http://localhost:4000
     api_key: sk-litellm-master-key
