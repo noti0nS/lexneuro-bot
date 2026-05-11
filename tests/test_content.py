@@ -306,3 +306,114 @@ def test_table_separator_with_colons():
     text = "| :--- | :---: | ---: |\n| left | center | right |"
     result = sanitize_discord_markdown(text)
     assert "---" not in result
+
+
+def test_code_block_preserves_language_identifier():
+    text = "```python\nprint('hello')\n```"
+    assert sanitize_discord_markdown(text) == text
+
+
+def test_code_block_preserves_language_javascript():
+    text = "```javascript\nconsole.log('hello');\n```"
+    assert sanitize_discord_markdown(text) == text
+
+
+def test_code_block_preserves_language_unknown():
+    text = "```mycustomlang\ncode here\n```"
+    assert sanitize_discord_markdown(text) == text
+
+
+def test_code_block_preserves_language_with_dash():
+    text = "```c sharp\nConsole.WriteLine();\n```"
+    result = sanitize_discord_markdown(text)
+    assert "c sharp" in result
+
+
+def test_multiple_code_blocks_different_languages():
+    text = "a\n```py\na\n```\nb\n```js\nb\n```"
+    result = sanitize_discord_markdown(text)
+    assert "```py" in result
+    assert "```js" in result
+
+
+def test_code_block_with_latex_looking_content():
+    text = "```python\n# $a^2 + b^2 = c^2$\nprint('ok')\n```"
+    result = sanitize_discord_markdown(text)
+    assert "```python" in result
+    assert "$a^2 + b^2 = c^2$" in result
+
+
+def test_code_block_with_html_looking_content():
+    text = '```html\n<div class="foo">text</div>\n```'
+    result = sanitize_discord_markdown(text)
+    assert "```html" in result
+    assert "<div" in result
+
+
+def test_code_block_with_heading_looking_content():
+    text = "```markdown\n#### heading\n```"
+    result = sanitize_discord_markdown(text)
+    assert "```markdown" in result
+    assert "#### heading" in result
+
+
+def test_code_block_with_table_looking_content():
+    text = "```\n| a | b |\n| --- | --- |\n```"
+    result = sanitize_discord_markdown(text)
+    assert "| a | b |" in result
+    assert "---" in result
+
+
+def test_code_block_surrounded_by_other_markdown():
+    text = "some **bold** text\n```python\ncode\n```\nmore *italic* text"
+    result = sanitize_discord_markdown(text)
+    assert "```python" in result
+    assert "**bold**" in result
+    assert "*italic*" in result
+
+
+def test_inline_code_near_code_block():
+    text = "use `pip`\n```bash\npip install foo\n```"
+    result = sanitize_discord_markdown(text)
+    assert "```bash" in result
+    assert "`pip`" in result
+
+
+def test_code_block_at_start_strip():
+    text = "```python\ncode\n```\n\n"
+    result = sanitize_discord_markdown(text)
+    assert "```python" in result
+
+
+def test_code_block_at_end_strip():
+    text = "\n\n```python\ncode\n```"
+    result = sanitize_discord_markdown(text)
+    assert "```python" in result
+
+
+def test_incomplete_code_block_no_close():
+    """Simula code block truncado (sem fechamento) — language identifier sobrevive."""
+    text = "```python\nprint('hello')"
+    result = sanitize_discord_markdown(text)
+    assert "```python" in result
+    assert "print('hello')" in result
+
+
+def test_incomplete_code_block_no_open():
+    """Simula metade final de code block partido (sem abertura) — trailing ``` sobrevive."""
+    text = "print('hello')\n```\nmore text"
+    result = sanitize_discord_markdown(text)
+    assert "```" in result
+    assert "more text" in result
+
+
+def test_code_block_split_across_two_messages():
+    """Simula code block partido em 2 mensagens pela streaming."""
+    msg1 = "text\n```python\nprint('hel"
+    msg2 = "lo')\n```\nmore text"
+    r1 = sanitize_discord_markdown(msg1)
+    r2 = sanitize_discord_markdown(msg2)
+    # language identifier survives in msg1
+    assert "```python" in r1
+    # closing backticks survive in msg2
+    assert "```" in r2

@@ -29,7 +29,6 @@ from .helpers.ui import (
     VISION_MODEL_TAGS,
 )
 from .helpers.content import sanitize_discord_markdown
-from .prompts import build_system_prompt
 
 
 @dataclass
@@ -398,7 +397,8 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
             .replace("{date}", now.strftime("%B %d %Y"))
             .replace("{time}", now.strftime("%H:%M:%S %Z%z"))
         )
-        messages.append(dict(role="system", content=build_system_prompt(system_prompt)))
+        system_prompt += "\n\nSempre use ```language para code blocks (ex: ```python, ```javascript, ```bash)."
+        messages.append(dict(role="system", content=(system_prompt or "").strip()))
 
         curr_content = finish_reason = None
         response_msgs = []
