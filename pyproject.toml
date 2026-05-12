@@ -8,6 +8,7 @@ dependencies = [
     "ddgs>=9.14.2",
     "discord-py>=2.7.1",
     "httpx>=0.28.1",
+    "markitdown[pdf,docx]>=0.1.5",
     "odfpy>=1.4.1",
     "openai>=2.33.0",
     "pandoc>=2.4",

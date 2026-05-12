@@ -93,6 +93,11 @@ models:
 abnt:
   max_document_chars: 100000
 
+peca:
+  max_enunciado_chars: 50000
+  max_file_mb: 25
+  # model: openai/gpt-5         # optional: specialized model for legal pieces
+
 cronograma:
   days_before_test: 3
   default_hours_per_day: 4
