@@ -5,7 +5,7 @@ description = "Discord bot for legal research, programming assistance, ABNT comp
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "ddgs>=9.14.2",
+    "ddgs>=9.14.4",
     "discord-py>=2.7.1",
     "httpx>=0.28.1",
     "markitdown[pdf,docx]>=0.1.5",
