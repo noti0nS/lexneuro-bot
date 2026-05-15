@@ -38,8 +38,30 @@ class DocxProcessor:
         return "\n\n".join(paragraphs)
 
     def generate(self, content: str, title: str) -> bytes:
-        md = f"# {title}\n\n{content}"
-        return self._apply_abnt(_run_pandoc(md, "docx"))
+        docx_bytes = _run_pandoc(content, "docx")
+        docx_bytes = self._apply_abnt(docx_bytes)
+        return self._insert_centered_title(docx_bytes, title)
+
+    def _insert_centered_title(self, docx_bytes: bytes, title: str) -> bytes:
+        doc = Document(BytesIO(docx_bytes))
+
+        if doc.paragraphs:
+            title_paragraph = doc.paragraphs[0].insert_paragraph_before(title)
+        else:
+            title_paragraph = doc.add_paragraph(title)
+
+        title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_paragraph.style = "Normal"
+
+        for run in title_paragraph.runs:
+            run.font.name = "Times New Roman"
+            run.font.size = Pt(12)
+            run.font.bold = True
+
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
 
     def _apply_abnt(self, docx_bytes: bytes) -> bytes:
         doc = Document(BytesIO(docx_bytes))
@@ -131,7 +153,7 @@ class PdfProcessor:
         raise ValueError("pdf_extraction_not_supported")
 
     def generate(self, content: str, title: str) -> bytes:
-        md = f"# {title}\n\n{content}"
+        md = f"\\begin{{center}}\n\\textbf{{{title}}}\n\\end{{center}}\n\n{content}"
         return _run_pandoc(md, "pdf")
 
 

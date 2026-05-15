@@ -4,9 +4,14 @@ from typing import cast
 import discord
 
 from src.commands.peca import (
+    AREA_CHOICES,
     PECA_FORMAT_CHOICES,
-    _attachment_is_supported,
-    _build_peca_filename,
+    TIPO_CHOICES,
+    attachment_is_supported,
+    build_peca_filename,
+    filter_choices,
+    area_autocomplete,
+    tipo_autocomplete,
 )
 from src.prompts.peca import PECA_SYSTEM_PROMPT, build_peca_messages
 
@@ -70,7 +75,7 @@ def test_system_prompt_contains_placeholders() -> None:
 def test_system_prompt_contains_quality_rules() -> None:
     messages = build_peca_messages(enunciado="test")
     system = messages[0]["content"]
-    assert "NUNCA INVENTE DADOS" in system
+    assert "Não presuma dados" in system
     assert "Da Responsabilidade Civil da Requerida" in system
     assert "Da Improcedência do Pedido Autoral" in system
     assert "Da Inépcia da Inicial" in system
@@ -80,13 +85,13 @@ def test_system_prompt_contains_quality_rules() -> None:
 def test_system_prompt_contains_structure_guidelines() -> None:
     messages = build_peca_messages(enunciado="test")
     system = messages[0]["content"]
-    assert "Endereçamento" in system
-    assert "Qualificação das partes" in system
-    assert "Síntese objetiva dos fatos" in system
-    assert "Fundamentos jurídicos" in system
-    assert "Pedidos" in system
-    assert "Valor da causa" in system
-    assert "Fechamento" in system
+    assert "endereçamento" in system.lower()
+    assert "qualificação das partes" in system.lower()
+    assert "síntese dos fatos" in system.lower()
+    assert "fundamentos jurídicos" in system.lower()
+    assert "pedidos" in system.lower()
+    assert "valor da causa" in system.lower()
+    assert "fechamento" in system.lower()
 
 
 def test_system_prompt_no_generic_titles() -> None:
@@ -97,33 +102,36 @@ def test_system_prompt_no_generic_titles() -> None:
 
 
 def test_build_peca_filename_docx() -> None:
-    filename = _build_peca_filename("ação de despejo", "docx")
-    assert filename.startswith("peca_")
+    filename = build_peca_filename("Substabelecimento", user_id=123456, output_format="docx")
+    assert filename.startswith("peca_substabelecimento_123456_")
     assert filename.endswith(".docx")
 
 
 def test_build_peca_filename_pdf() -> None:
-    filename = _build_peca_filename("contestação", "pdf")
+    filename = build_peca_filename("Contestação", user_id=789, output_format="pdf")
+    assert "peca_contesta" in filename
+    assert "_789_" in filename
     assert filename.endswith(".pdf")
 
 
 def test_build_peca_filename_odt() -> None:
-    filename = _build_peca_filename("agravo de instrumento", "odt")
+    filename = build_peca_filename("Alvará", user_id=42, output_format="odt")
+    assert "_42_" in filename
     assert filename.endswith(".odt")
 
 
+def test_build_peca_filename_none_tipo_fallback() -> None:
+    filename = build_peca_filename(None, user_id=1, output_format="docx")
+    assert filename.startswith("peca_peca_1_")
+    assert filename.endswith(".docx")
+
+
 def test_build_peca_filename_sanitizes_special_chars() -> None:
-    filename = _build_peca_filename("ação @#$% 123", "docx")
+    filename = build_peca_filename("ação @#$% 123", user_id=5, output_format="docx")
     assert "@" not in filename
     assert "#" not in filename
     assert "$" not in filename
     assert "%" not in filename
-
-
-def test_build_peca_filename_empty_fallback() -> None:
-    filename = _build_peca_filename("@#$", "docx")
-    assert filename.startswith("peca_peca_") or filename.startswith("peca__")
-    assert filename.endswith(".docx")
 
 
 def test_format_choices_count() -> None:
@@ -133,7 +141,7 @@ def test_format_choices_count() -> None:
 
 
 def test_attachment_is_supported_docx() -> None:
-    result = _attachment_is_supported(
+    result = attachment_is_supported(
         cast(
             discord.Attachment,
             cast(object, _Attachment(filename="caso.docx", content_type=None)),
@@ -143,7 +151,7 @@ def test_attachment_is_supported_docx() -> None:
 
 
 def test_attachment_is_supported_odt() -> None:
-    result = _attachment_is_supported(
+    result = attachment_is_supported(
         cast(
             discord.Attachment,
             cast(object, _Attachment(filename="enunciado.odt", content_type=None)),
@@ -153,7 +161,7 @@ def test_attachment_is_supported_odt() -> None:
 
 
 def test_attachment_is_supported_pdf() -> None:
-    result = _attachment_is_supported(
+    result = attachment_is_supported(
         cast(
             discord.Attachment,
             cast(object, _Attachment(filename="caso.pdf", content_type=None)),
@@ -163,7 +171,7 @@ def test_attachment_is_supported_pdf() -> None:
 
 
 def test_attachment_is_supported_by_content_type() -> None:
-    result = _attachment_is_supported(
+    result = attachment_is_supported(
         cast(
             discord.Attachment,
             cast(
@@ -179,7 +187,7 @@ def test_attachment_is_supported_by_content_type() -> None:
 
 
 def test_attachment_rejects_unsupported() -> None:
-    result = _attachment_is_supported(
+    result = attachment_is_supported(
         cast(
             discord.Attachment,
             cast(
@@ -192,5 +200,72 @@ def test_attachment_rejects_unsupported() -> None:
 
 
 def test_system_prompt_constant_unchanged() -> None:
-    assert "NUNCA INVENTE DADOS" in PECA_SYSTEM_PROMPT
-    assert "Responda APENAS com a peça processual completa" in PECA_SYSTEM_PROMPT
+    assert "Não presuma dados" in PECA_SYSTEM_PROMPT
+    assert "Responda apenas com a peça processual completa" in PECA_SYSTEM_PROMPT
+
+
+def test_tipo_choices_count() -> None:
+    assert len(TIPO_CHOICES) == 7
+
+
+def test_area_choices_count() -> None:
+    assert len(AREA_CHOICES) == 11
+
+
+def test_filter_choices_empty_current() -> None:
+    result = filter_choices(["A", "B", "C"], "")
+    assert len(result) == 3
+    assert result[0].name == "A"
+    assert result[0].value == "A"
+
+
+def test_filter_choices_substring_match() -> None:
+    result = filter_choices(["Civil", "Penal", "Trabalhista"], "il")
+    assert len(result) == 1
+    assert result[0].name == "Civil"
+
+
+def test_filter_choices_case_insensitive() -> None:
+    result = filter_choices(["Civil", "Penal"], "CI")
+    assert len(result) == 1
+    assert result[0].name == "Civil"
+
+
+def test_filter_choices_no_match() -> None:
+    result = filter_choices(["Civil", "Penal"], "XYZ")
+    assert len(result) == 0
+
+
+async def test_tipo_autocomplete_returns_all() -> None:
+    result = await tipo_autocomplete(
+        cast(discord.Interaction, cast(object, None)),
+        "",
+    )
+    assert len(result) == len(TIPO_CHOICES)
+
+
+async def test_tipo_autocomplete_filters() -> None:
+    result = await tipo_autocomplete(
+        cast(discord.Interaction, cast(object, None)),
+        "Contest",
+    )
+    assert len(result) == 2
+    names = {r.name for r in result}
+    assert names == {"Contestação", "Contestação com reconvenção"}
+
+
+async def test_area_autocomplete_returns_all() -> None:
+    result = await area_autocomplete(
+        cast(discord.Interaction, cast(object, None)),
+        "",
+    )
+    assert len(result) == len(AREA_CHOICES)
+
+
+async def test_area_autocomplete_filters() -> None:
+    result = await area_autocomplete(
+        cast(discord.Interaction, cast(object, None)),
+        "trab",
+    )
+    assert len(result) == 1
+    assert result[0].name == "Trabalhista"

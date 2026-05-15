@@ -34,7 +34,7 @@ SUPPORTED_INPUT_EXTENSIONS = (".pdf", ".docx", ".odt")
 FILE_MARKER = "### CASO PRÁTICO (extraído do arquivo)"
 
 
-def _attachment_is_supported(attachment: discord.Attachment) -> bool:
+def attachment_is_supported(attachment: discord.Attachment) -> bool:
     content_type = (attachment.content_type or "").lower()
     filename = attachment.filename.lower()
     return content_type in SUPPORTED_INPUT_CONTENT_TYPES or filename.endswith(
@@ -52,12 +52,70 @@ def _extract_file_text(file_bytes: bytes, filename: str) -> str:
     return result.text_content
 
 
-def _build_peca_filename(enunciado: str, output_format: str) -> str:
-    safe_title = re.sub(r"[^\w\s-]", "", enunciado).strip()[:50]
-    safe_title = re.sub(r"[-\s]+", "_", safe_title) or "peca"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+TIPO_CHOICES = [
+    "Alvará",
+    "Petição inicial",
+    "Contestação",
+    "Contestação com reconvenção",
+    "Procuração",
+    "Substabelecimento",
+    "Contrato de honorários",
+]
+
+AREA_CHOICES = [
+    "Civil",
+    "Penal",
+    "Trabalhista",
+    "Tributário",
+    "Constitucional",
+    "Administrativo",
+    "Empresarial",
+    "Consumidor",
+    "Família",
+    "Previdenciário",
+    "Ambiental",
+]
+
+
+def build_peca_filename(
+    tipo: str | None, user_id: int, output_format: str
+) -> str:
+    safe_tipo = re.sub(r"[^\w\s-]", "", tipo or "").strip().lower()
+    safe_tipo = re.sub(r"[-\s]+", "_", safe_tipo) or "peca"
+    if len(safe_tipo) > 60:
+        safe_tipo = safe_tipo[:60]
+    epoch = int(datetime.now().timestamp())
     ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
-    return f"peca_{safe_title}_{timestamp}{ext_map[output_format]}"
+    return f"peca_{safe_tipo}_{user_id}_{epoch}{ext_map[output_format]}"
+
+
+def filter_choices(
+    choices: list[str], current: str
+) -> list[discord.app_commands.Choice[str]]:
+    if not current:
+        return [discord.app_commands.Choice(name=c, value=c) for c in choices]
+    lowered = current.lower()
+    return [
+        discord.app_commands.Choice(name=c, value=c)
+        for c in choices
+        if lowered in c.lower()
+    ]
+
+
+async def tipo_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[discord.app_commands.Choice[str]]:
+    del interaction
+    return filter_choices(TIPO_CHOICES, current)
+
+
+async def area_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[discord.app_commands.Choice[str]]:
+    del interaction
+    return filter_choices(AREA_CHOICES, current)
 
 
 async def _send_peca_result(
@@ -144,6 +202,7 @@ def register_peca_command(
         format="Formato do arquivo de saída",
     )
     @discord.app_commands.choices(format=PECA_FORMAT_CHOICES)
+    @discord.app_commands.autocomplete(tipo=tipo_autocomplete, area=area_autocomplete)
     async def peca_command(
         interaction: discord.Interaction,
         enunciado: str = "",
@@ -177,7 +236,7 @@ def register_peca_command(
         combined_text = enunciado.strip()
 
         if arquivo is not None:
-            if not _attachment_is_supported(arquivo):
+            if not attachment_is_supported(arquivo):
                 await interaction.response.send_message(
                     "Tipo de documento não suportado. Envie um arquivo .pdf, .docx ou .odt.",
                     ephemeral=True,
@@ -350,8 +409,9 @@ def register_peca_command(
             return
 
         try:
-            file_bytes, _ = generate_document(raw_output, combined_text[:100], formato_valor)
-            filename = _build_peca_filename(combined_text[:50], formato_valor)
+            title = tipo if tipo else "Peça Processual"
+            file_bytes, _ = generate_document(raw_output, title, formato_valor)
+            filename = build_peca_filename(tipo, interaction.user.id, formato_valor)
         except RuntimeError as exc:
             await interaction.followup.send(str(exc))
             return
