@@ -102,7 +102,9 @@ def test_system_prompt_no_generic_titles() -> None:
 
 
 def test_build_peca_filename_docx() -> None:
-    filename = build_peca_filename("Substabelecimento", user_id=123456, output_format="docx")
+    filename = build_peca_filename(
+        "Substabelecimento", user_id=123456, output_format="docx"
+    )
     assert filename.startswith("peca_substabelecimento_123456_")
     assert filename.endswith(".docx")
 

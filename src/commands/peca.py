@@ -77,9 +77,7 @@ AREA_CHOICES = [
 ]
 
 
-def build_peca_filename(
-    tipo: str | None, user_id: int, output_format: str
-) -> str:
+def build_peca_filename(tipo: str | None, user_id: int, output_format: str) -> str:
     safe_tipo = re.sub(r"[^\w\s-]", "", tipo or "").strip().lower()
     safe_tipo = re.sub(r"[-\s]+", "_", safe_tipo) or "peca"
     if len(safe_tipo) > 60:
@@ -403,9 +401,7 @@ def register_peca_command(
             return
 
         if not raw_output.strip():
-            await interaction.followup.send(
-                "Não foi possível gerar a peça processual."
-            )
+            await interaction.followup.send("Não foi possível gerar a peça processual.")
             return
 
         try:
