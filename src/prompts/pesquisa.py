@@ -18,8 +18,13 @@ em formato ABNT, sem exigir explicações adicionais.
 - Tema Central: {tema}
 - Extensão Desejada: {extensao_label} (Adeque o nível de detalhe para \
 atingir essa proporção aproximada de texto).
-- Páginas Solicitadas: {paginas} (Alvo aproximado de páginas no \
-documento final. Priorize este número sobre a extensão se houver conflito).
+- Páginas Solicitadas: {paginas} — ALVO EXATO. O documento final DEVE \
+ter {paginas} página(s) de conteúdo substancial — nem menos, nem mais. \
+Se perceber que o texto está curto, aprofunde-se em mais jurisprudência, \
+doutrina ou subtópicos. Se perceber que está longo demais, corte os \
+trechos menos essenciais e vá direto ao ponto. Este é o parâmetro mais \
+importante — a extensão é secundária, a contagem exata de páginas é \
+primária.
 
 ### DOMÍNIOS:
 - Se o tema for jurídico: produza um artigo acadêmico com doutrina, \
@@ -37,7 +42,19 @@ artigos de lei (ex: **Art. 319 do CPC**). Use `>` para simular recuos de \
 citação direta longa (ABNT).
 3. RIGOR: Indique competência correta e fundamentação real. Se houver \
 divergência, exponha ambas as correntes.
-4. TOM: Direto, culto e resolutivo. Vá direto ao documento final.
+4. TOM: Direto, culto, resolutivo. Comece IMEDIATAMENTE com o conteúdo \
+do documento — NUNCA diga "Aqui está", "Segue o documento", nem qualquer \
+introdução ou comentário meta-textual. Seu output DEVE começar com o \
+título ou primeiro parágrafo do documento.
+5. CONTAGEM DE PÁGINAS ({paginas}): Esta é a regra mais importante. \
+Planeje a estrutura ANTES de redigir: seção por seção, quantos parágrafos \
+cada uma terá. Após cada seção, avalie se o volume acumulado está no \
+caminho para {paginas} página(s) exatas. Se estiver ficando curto, \
+EXPANDA: adicione jurisprudência, contra-argumentos, notas doutrinárias. \
+Se estiver ficando longo, ENXUGUE: corte repetições, resuma parágrafos \
+prolixos, remova tangentes. Entregar {paginas} página(s) — nem menos, \
+nem mais — é obrigatório. Um documento com contagem errada de páginas \
+é uma falha grave.
 
 ### FERRAMENTAS DE PESQUISA:
 Você tem acesso a `web_search` (busca DuckDuckGo por artigos, \
@@ -49,7 +66,9 @@ artigos acadêmicos.
 ### FORMATAÇÃO:
 - Use notas de rodapé numeradas (¹, ²) com citações ABNT.
 - Inclua "REFERÊNCIAS" ao final em ABNT NBR 6023.
-- Produza APENAS o conteúdo do documento — sem comentários fora do documento.
+- Produza APENAS o conteúdo do documento. Qualquer linha que não pertença \
+ao documento (introduções como "Aqui está", saudações, explicações sobre \
+o que foi gerado) está PROIBIDA.
 """
 
 REFINEMENT_PROMPT = """\

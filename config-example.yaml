@@ -107,7 +107,6 @@ research:
   search_results_per_topic: 8
   max_page_fetches: 5
   thinking_model: deepseek/deepseek-r1
-  refinement_enabled: true
 
 status:
   enabled: true

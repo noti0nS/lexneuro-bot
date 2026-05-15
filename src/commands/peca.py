@@ -15,6 +15,7 @@ from ..helpers.async_utils import await_task_with_heartbeats
 from ..helpers.content import get_completion_text
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
+from ..helpers.send import send_document_result
 from ..prompts.peca import build_peca_messages
 
 PECA_FORMAT_CHOICES = [
@@ -114,71 +115,6 @@ async def area_autocomplete(
 ) -> list[discord.app_commands.Choice[str]]:
     del interaction
     return filter_choices(AREA_CHOICES, current)
-
-
-async def _send_peca_result(
-    interaction: discord.Interaction,
-    content: str,
-    filename: str,
-    file_bytes: bytes,
-) -> None:
-    max_file_size = int(7.5 * 1024 * 1024)
-
-    if len(file_bytes) < max_file_size:
-        discord_file = discord.File(
-            fp=BytesIO(file_bytes),
-            filename=filename,
-        )
-        await interaction.followup.send(
-            "Peça processual concluída! Aqui está o documento:",
-            file=discord_file,
-        )
-        return
-
-    channel = interaction.channel
-    if channel is None:
-        await interaction.followup.send(
-            "Não foi possível criar uma thread para enviar o documento.",
-        )
-        return
-
-    thread_name = f"Peça: {filename.rsplit('.', 1)[0][:80]}"
-    if isinstance(channel, discord.TextChannel):
-        thread = await channel.create_thread(
-            name=thread_name,
-            type=discord.ChannelType.public_thread,
-        )
-    else:
-        await interaction.followup.send(
-            "Não foi possível criar uma thread neste canal.",
-        )
-        return
-
-    max_message_length = 1900
-    chunks: list[str] = []
-    current_chunk = ""
-
-    for line in content.split("\n"):
-        if len(current_chunk) + len(line) + 1 > max_message_length:
-            chunks.append(current_chunk)
-            current_chunk = line + "\n"
-        else:
-            current_chunk += line + "\n"
-
-    if current_chunk:
-        chunks.append(current_chunk)
-
-    await thread.send(
-        f"**Peça processual concluída!** O documento foi dividido em {len(chunks)} partes.\n"
-        + "(O arquivo original excede o limite de tamanho do Discord, então foi enviado em mensagens.)"
-    )
-
-    for i, chunk in enumerate(chunks, 1):
-        await thread.send(f"**Parte {i}/{len(chunks)}**\n```\n{chunk}\n```")
-
-    await interaction.followup.send(
-        f"Peça processual concluída! O documento foi enviado na thread: {thread.mention}"
-    )
 
 
 def register_peca_command(
@@ -417,7 +353,11 @@ def register_peca_command(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."
             )
-            await _send_peca_result(interaction, raw_output, "peca.txt", b"")
+            await send_document_result(
+                interaction, raw_output, "peca.txt", b"", label="Peça processual"
+            )
             return
 
-        await _send_peca_result(interaction, raw_output, filename, file_bytes)
+        await send_document_result(
+            interaction, raw_output, filename, file_bytes, label="Peça processual"
+        )

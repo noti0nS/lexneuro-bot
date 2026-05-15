@@ -162,7 +162,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     register_abnt_command(discord_bot, state, httpx_client, user_has_permission)
     register_peca_command(discord_bot, state, httpx_client, user_has_permission)
     register_cronograma_command(discord_bot, state)
-    register_pesquisa_command(discord_bot, state)
+    register_pesquisa_command(discord_bot, state, user_has_permission)
 
     @discord_bot.event
     async def on_ready() -> None:

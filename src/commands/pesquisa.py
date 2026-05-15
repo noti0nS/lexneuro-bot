@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -15,8 +15,13 @@ from ..helpers.content import get_completion_text
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
 from ..helpers.search import fetch_page_content, search_topics
+from ..helpers.send import send_document_result
 from ..helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
-from ..prompts.pesquisa import build_pesquisa_messages, build_refinement_message
+from ..prompts.pesquisa import (
+    EXTENSAO_LABELS,
+    build_pesquisa_messages,
+    build_refinement_message,
+)
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
     {
@@ -71,72 +76,14 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
 ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
 
 
-def build_pesquisa_filename(title: str, output_format: str) -> str:
-    safe_title = re.sub(r"[^\w\s-]", "", title).strip()[:50]
-    safe_title = re.sub(r"[-\s]+", "_", safe_title)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ext = ".odt" if output_format.lower() == "odt" else ".docx"
-    return f"pesquisa_{safe_title}_{timestamp}{ext}"
-
-
-async def send_pesquisa_result(
-    interaction: discord.Interaction,
-    content: str,
-    filename: str,
-    file_bytes: bytes,
-) -> None:
-    max_file_size = 7.5 * 1024 * 1024
-
-    if len(file_bytes) < max_file_size:
-        file = discord.File(
-            fp=__import__("io").BytesIO(file_bytes),
-            filename=filename,
-        )
-        await interaction.followup.send(
-            "Pesquisa concluída! Aqui está o documento:",
-            file=file,
-        )
-    else:
-        channel = interaction.channel
-        if channel is None:
-            await interaction.followup.send(
-                "Não foi possível criar uma thread para enviar o documento.",
-            )
-            return
-
-        thread_name = (
-            f"Pesquisa: {filename.replace('.docx', '').replace('.odt', '')[:80]}"
-        )
-        thread = await cast(discord.TextChannel, channel).create_thread(
-            name=thread_name,
-            type=discord.ChannelType.public_thread,
-        )
-
-        max_message_length = 1900
-        chunks = []
-        current_chunk = ""
-
-        for line in content.split("\n"):
-            if len(current_chunk) + len(line) + 1 > max_message_length:
-                chunks.append(current_chunk)
-                current_chunk = line + "\n"
-            else:
-                current_chunk += line + "\n"
-
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        await thread.send(
-            f"**Pesquisa concluída!** O documento foi dividido em {len(chunks)} partes.\n"
-            + "(O arquivo original excede o limite de tamanho do Discord, então foi enviado em mensagens.)"
-        )
-
-        for i, chunk in enumerate(chunks, 1):
-            await thread.send(f"**Parte {i}/{len(chunks)}**\n```\n{chunk}\n```")
-
-        await interaction.followup.send(
-            f"Pesquisa concluída! O documento foi enviado na thread: {thread.mention}"
-        )
+def build_pesquisa_filename(tema: str, user_id: int, output_format: str) -> str:
+    safe_tema = re.sub(r"[^\w\s-]", "", tema).strip().lower()
+    safe_tema = re.sub(r"[-\s]+", "_", safe_tema) or "pesquisa"
+    if len(safe_tema) > 60:
+        safe_tema = safe_tema[:60]
+    epoch = int(datetime.now().timestamp())
+    ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
+    return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext_map[output_format]}"
 
 
 def _format_tool_call(tool_call: Any) -> dict[str, Any]:
@@ -166,6 +113,7 @@ def _format_search_results(results: list[dict[str, Any]]) -> str:
 def register_pesquisa_command(
     discord_bot: commands.Bot,
     state: Any,
+    user_has_permission: Any,
 ) -> None:
     @discord_bot.tree.command(
         name="pesquisa",
@@ -175,10 +123,15 @@ def register_pesquisa_command(
         tema="Tema da pesquisa em texto livre (ex: competência FGTS falecimento)",
         extensao="Nível de detalhe do documento",
         paginas="Número alvo de páginas (1–50). Sobrepõe a extensão se conflitar.",
+        auto_refinar="Auto-refinamento (self-Q&A) antes da geração",
         format="Formato do arquivo de saída",
     )
     @discord.app_commands.choices(
         extensao=EXTENSAO_CHOICES,
+        auto_refinar=[
+            discord.app_commands.Choice(name="Sim", value="true"),
+            discord.app_commands.Choice(name="Não (recomendado)", value="false"),
+        ],
         format=FORMATO_CHOICES,
     )
     async def pesquisa_command(
@@ -186,6 +139,7 @@ def register_pesquisa_command(
         tema: str,
         extensao: str = "padrao",
         paginas: int = 3,
+        auto_refinar: str = "false",
         format: discord.app_commands.Choice[str] | None = None,
     ) -> None:
         formato_valor = format.value if format else "docx"
@@ -211,17 +165,24 @@ def register_pesquisa_command(
             )
             return
 
+        if not user_has_permission(interaction.user, interaction.channel, state.config):
+            await interaction.response.send_message(
+                "Você não tem permissão para usar este bot aqui.", ephemeral=True
+            )
+            return
+
         await interaction.response.send_message(
             "Pesquisando e gerando o documento... Isso pode levar alguns minutos.",
             ephemeral=True,
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, formato: %s)",
+            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, auto_refinar: %s, formato: %s)",
             interaction.user.id,
             tema[:80],
             extensao,
             paginas,
+            auto_refinar == "true",
             formato_valor,
         )
 
@@ -235,7 +196,7 @@ def register_pesquisa_command(
         max_iterations = research_config.get("max_tool_iterations", 15)
         search_results_count = research_config.get("search_results_per_topic", 8)
         max_pages = research_config.get("max_page_fetches", 5)
-        refinement_enabled = research_config.get("refinement_enabled", True)
+        refinement_enabled = auto_refinar == "true"
 
         thinking_model = research_config.get("thinking_model")
         curr_model = thinking_model if thinking_model else state.curr_model
@@ -287,6 +248,21 @@ def register_pesquisa_command(
                             "Pesquisa refinement completed (user ID: %s, length: %s)",
                             interaction.user.id,
                             len(refinement_text),
+                        )
+                        extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Análise concluída. Agora prossiga com a pesquisa web e "
+                                    f"redija o documento com exatamente {paginas} página(s) — nem menos, nem mais "
+                                    f"({extensao_label}). Use as ferramentas de busca para reunir "
+                                    "fontes antes de redigir.\n\n"
+                                    "IMPORTANTE: Comece diretamente pelo conteúdo do documento. "
+                                    'Não inclua introduções como "Aqui está o documento" — '
+                                    "seu output deve iniciar com o título ou primeiro parágrafo."
+                                ),
+                            }
                         )
                     else:
                         logging.warning(
@@ -560,14 +536,18 @@ def register_pesquisa_command(
         # Generate document file
         try:
             file_bytes, _ = generate_document(raw_output, tema, formato_valor)
-            filename = build_pesquisa_filename(tema, formato_valor)
+            filename = build_pesquisa_filename(tema, interaction.user.id, formato_valor)
         except Exception:
             logging.exception("Error while generating document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."
             )
-            await send_pesquisa_result(interaction, raw_output, "pesquisa.txt", b"")
+            await send_document_result(
+                interaction, raw_output, "pesquisa.txt", b"", label="Pesquisa"
+            )
             return
 
-        await send_pesquisa_result(interaction, raw_output, filename, file_bytes)
+        await send_document_result(
+            interaction, raw_output, filename, file_bytes, label="Pesquisa"
+        )
