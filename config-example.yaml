@@ -108,6 +108,14 @@ pesquisa:
   max_page_fetches: 5
   model: deepseek/deepseek-r1
 
+relatorio:
+  max_tool_iterations: 15
+  search_results_per_topic: 8
+  max_page_fetches: 5
+  max_fonte_chars: 75000
+  default_paginas: 6
+  # model: openai/gpt-5         # optional override; falls back to /model global
+
 jurisprudencia:
   max_search_iterations: 12
   search_results_per_query: 8

@@ -8,6 +8,7 @@ from .pesquisa import (
     build_pesquisa_messages,
     build_refinement_message,
 )
+from .relatorio import build_relatorio_messages
 
 __all__ = [
     "ABNT_SYSTEM_PROMPT",
@@ -20,6 +21,7 @@ __all__ = [
     "build_peca_messages",
     "build_pesquisa_messages",
     "build_refinement_message",
+    "build_relatorio_messages",
     "format_date_pt",
     "load_abnt_reference",
 ]

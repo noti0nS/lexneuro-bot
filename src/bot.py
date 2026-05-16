@@ -19,6 +19,7 @@ from .commands.status import register_status_commands
 from .helpers.status_scheduler import start_status_scheduler
 from .commands.model import register_model_command
 from .commands.pesquisa import register_pesquisa_command
+from .commands.relatorio import register_relatorio_command
 from .config import (
     build_openai_chat_completion_kwargs,
     get_config,
@@ -165,6 +166,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     register_cronograma_command(discord_bot, state)
     register_pesquisa_command(discord_bot, state, user_has_permission)
     register_jurisprudencia_command(discord_bot, state, user_has_permission)
+    register_relatorio_command(discord_bot, state, httpx_client, user_has_permission)
 
     @discord_bot.event
     async def on_ready() -> None:

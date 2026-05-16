@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import re
 from datetime import datetime
@@ -10,11 +9,14 @@ from discord.ext import commands
 from openai import APIError
 
 from ..config import build_openai_chat_completion_kwargs, get_openai_config
+from ..helpers.ai_tools import (
+    ContentFilterError,
+    run_research_loop,
+)
 from ..helpers.async_utils import await_task_with_heartbeats
 from ..helpers.content import get_completion_text
 from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
-from ..helpers.search import fetch_page_content, search_topics
 from ..helpers.send import send_document_result
 from ..helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 from ..prompts.pesquisa import (
@@ -22,58 +24,6 @@ from ..prompts.pesquisa import (
     build_pesquisa_messages,
     build_refinement_message,
 )
-
-WEB_SEARCH_TOOL: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "description": (
-                "Busca na web por artigos jurídicos, jurisprudência, doutrina e fontes acadêmicas. "
-                "Use quando precisar de informações atualizadas ou fontes específicas não disponíveis "
-                "em seus dados de treinamento."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Termo de busca em português para encontrar fontes jurídicas relevantes",
-                    }
-                },
-                "required": ["query"],
-            },
-        },
-    }
-]
-
-FETCH_PAGE_TOOL: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_page",
-            "description": (
-                "Acessa o conteúdo completo de uma página web. "
-                "Use para obter o texto integral de artigos, decisões, doutrina "
-                "e outras fontes acadêmicas encontradas nas buscas. "
-                "Retorna o texto extraído da página (limitado a ~8000 caracteres). "
-                "Só use para URLs retornadas pela ferramenta web_search."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "URL completa da página a ser acessada (ex: https://exemplo.com/artigo)",
-                    }
-                },
-                "required": ["url"],
-            },
-        },
-    }
-]
-
-ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
 
 
 def build_pesquisa_filename(tema: str, user_id: int, output_format: str) -> str:
@@ -84,30 +34,6 @@ def build_pesquisa_filename(tema: str, user_id: int, output_format: str) -> str:
     epoch = int(datetime.now().timestamp())
     ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
     return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext_map[output_format]}"
-
-
-def _format_tool_call(tool_call: Any) -> dict[str, Any]:
-    return {
-        "id": tool_call.id,
-        "type": "function",
-        "function": {
-            "name": tool_call.function.name,
-            "arguments": tool_call.function.arguments,
-        },
-    }
-
-
-def _format_search_results(results: list[dict[str, Any]]) -> str:
-    formatted = []
-    for r in results:
-        formatted.append(
-            {
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "snippet": r.get("snippet", ""),
-            }
-        )
-    return json.dumps(formatted, ensure_ascii=False)
 
 
 def register_pesquisa_command(
@@ -207,7 +133,6 @@ def register_pesquisa_command(
 
         raw_output = ""
         request_started_at = datetime.now().timestamp()
-        pages_fetched = 0
 
         try:
             # Phase 1: Refinement (self-Q&A) — optional pre-generation step
@@ -286,220 +211,16 @@ def register_pesquisa_command(
                     del messages[saved_len:]
 
             # Phase 2: Research & generation (tool-calling loop)
-            for iteration in range(max_iterations):
-                logging.info(
-                    "Pesquisa LLM iteration %s/%s (user ID: %s, model: %s)",
-                    iteration + 1,
-                    max_iterations,
-                    interaction.user.id,
-                    openai_config["model"],
-                )
-
-                completion_task = asyncio.create_task(
-                    openai_client.chat.completions.create(
-                        **build_openai_chat_completion_kwargs(
-                            openai_config,
-                            messages,
-                            stream=False,
-                            tools=ALL_PESQUISA_TOOLS,
-                            reasoning_effort=reasoning_effort,
-                        )
-                    )
-                )
-                completion = await await_task_with_heartbeats(
-                    completion_task,
-                    (
-                        "Pesquisa LLM request still running "
-                        f"(user ID: {interaction.user.id}, "
-                        f"model: {openai_config['model']})"
-                    ),
-                )
-
-                if not completion.choices:
-                    raise RuntimeError("LLM returned no choices")
-
-                choice = completion.choices[0]
-
-                # Handle tool calls
-                if (
-                    choice.finish_reason == "tool_calls"
-                    and choice.message
-                    and choice.message.tool_calls
-                ):
-                    tool_calls = choice.message.tool_calls
-
-                    tool_summary = [
-                        f"{tc.function.name}({tc.function.arguments})"
-                        for tc in tool_calls
-                    ]
-                    logging.info(
-                        "Pesquisa tool calls requested (user ID: %s): %s",
-                        interaction.user.id,
-                        "; ".join(tool_summary),
-                    )
-
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": choice.message.content or "",
-                            "tool_calls": [_format_tool_call(tc) for tc in tool_calls],
-                        }
-                    )
-
-                    for tc in tool_calls:
-                        if tc.function.name == "web_search":
-                            try:
-                                args = json.loads(tc.function.arguments)
-                            except json.JSONDecodeError:
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tc.id,
-                                        "content": "Erro: argumentos inválidos.",
-                                    }
-                                )
-                                continue
-
-                            query = args.get("query", "")
-                            logging.info(
-                                "Pesquisa web_search (user ID: %s, query: %s)",
-                                interaction.user.id,
-                                query,
-                            )
-
-                            try:
-                                results = await search_topics(
-                                    [query],
-                                    max_results=search_results_count,
-                                )
-                                search_data = results.get(query, [])
-                            except Exception:
-                                logging.exception(
-                                    "Pesquisa web search failed for query: %s",
-                                    query,
-                                )
-                                search_data = []
-
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "content": _format_search_results(search_data),
-                                }
-                            )
-
-                        elif tc.function.name == "fetch_page":
-                            if pages_fetched >= max_pages:
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tc.id,
-                                        "content": (
-                                            "Limite de páginas atingido. "
-                                            "Continue com as fontes já obtidas."
-                                        ),
-                                    }
-                                )
-                                continue
-
-                            try:
-                                args = json.loads(tc.function.arguments)
-                            except json.JSONDecodeError:
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tc.id,
-                                        "content": "Erro: argumentos inválidos.",
-                                    }
-                                )
-                                continue
-
-                            url = args.get("url", "")
-                            logging.info(
-                                "Pesquisa fetch_page (user ID: %s, url: %s)",
-                                interaction.user.id,
-                                url,
-                            )
-                            pages_fetched += 1
-
-                            page_content = await fetch_page_content(url)
-                            if page_content:
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tc.id,
-                                        "content": page_content,
-                                    }
-                                )
-                            else:
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tc.id,
-                                        "content": (
-                                            "Não foi possível acessar o conteúdo "
-                                            "desta página. Tente outra URL ou "
-                                            "continue com as fontes disponíveis."
-                                        ),
-                                    }
-                                )
-
-                    continue
-
-                # Handle stop (document complete)
-                if choice.finish_reason == "stop":
-                    raw_output = get_completion_text(completion)
-                    if raw_output:
-                        break
-                    continue
-
-                # Handle length (max_tokens reached)
-                if choice.finish_reason == "length":
-                    logging.warning(
-                        "Pesquisa LLM reached max_tokens (user ID: %s)",
-                        interaction.user.id,
-                    )
-                    raw_output = get_completion_text(completion)
-                    break
-
-                # Handle content_filter
-                if choice.finish_reason == "content_filter":
-                    logging.error(
-                        "Pesquisa LLM content filter triggered (user ID: %s)",
-                        interaction.user.id,
-                    )
-                    await interaction.followup.send(
-                        "A geração do documento foi bloqueada pelo filtro de conteúdo do provedor."
-                    )
-                    return
-
-                # Unexpected finish reason — capture whatever content exists
-                raw_output = get_completion_text(completion)
-                if raw_output:
-                    break
-
-            # If loop exhausted without content, force final generation
-            if not raw_output.strip():
-                logging.warning(
-                    "Pesquisa tool loop exhausted, forcing final generation (user ID: %s)",
-                    interaction.user.id,
-                )
-                force_task = asyncio.create_task(
-                    openai_client.chat.completions.create(
-                        **build_openai_chat_completion_kwargs(
-                            openai_config,
-                            messages,
-                            stream=False,
-                            tool_choice="none",
-                            reasoning_effort=reasoning_effort,
-                        )
-                    )
-                )
-                force_completion = await await_task_with_heartbeats(
-                    force_task,
-                    "Pesquisa final generation still running",
-                )
-                raw_output = get_completion_text(force_completion)
+            raw_output = await run_research_loop(
+                openai_client=openai_client,
+                openai_config=openai_config,
+                messages=messages,
+                max_iterations=max_iterations,
+                search_results_per_topic=search_results_count,
+                max_page_fetches=max_pages,
+                reasoning_effort=reasoning_effort,
+                user_id=interaction.user.id,
+            )
 
             elapsed = datetime.now().timestamp() - request_started_at
             logging.info(
@@ -509,6 +230,13 @@ def register_pesquisa_command(
                 elapsed,
             )
 
+        except ContentFilterError as exc:
+            logging.error(
+                "Pesquisa LLM content filter triggered (user ID: %s)",
+                interaction.user.id,
+            )
+            await interaction.followup.send(str(exc))
+            return
         except APIError as exc:
             logging.exception(
                 "Provider error while generating pesquisa: %s",
