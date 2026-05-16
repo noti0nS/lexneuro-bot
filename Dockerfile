@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y wget \
     && dpkg -i pandoc-3.2.1-1-amd64.deb && rm pandoc-3.2.1-1-amd64.deb \
     && apt-get purge -y wget && apt-get autoremove -y && apt-get clean
 RUN apt-get update && apt-get install -y \
-    texlive-latex-base texlive-latex-recommended texlive-fonts-recommended \
+    texlive-xetex texlive-latex-recommended texlive-fonts-recommended \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv \

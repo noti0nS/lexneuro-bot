@@ -76,3 +76,24 @@ FORMATO_CHOICES = [
     discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
     discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
 ]
+
+TRIBUNAL_CHOICES = [
+    discord.app_commands.Choice(name="Todos os tribunais", value="todos"),
+    discord.app_commands.Choice(name="STF — Supremo Tribunal Federal", value="stf"),
+    discord.app_commands.Choice(name="STJ — Superior Tribunal de Justiça", value="stj"),
+    discord.app_commands.Choice(
+        name="TST — Tribunal Superior do Trabalho", value="tst"
+    ),
+    discord.app_commands.Choice(
+        name="TJDFT — Tribunal de Justiça do DF", value="tjdft"
+    ),
+    discord.app_commands.Choice(name="TJSP — Tribunal de Justiça de SP", value="tjsp"),
+    discord.app_commands.Choice(name="TJRJ — Tribunal de Justiça do RJ", value="tjRJ"),
+]
+
+FORMATO_JURISPRUDENCIA_CHOICES = [
+    discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),
+    discord.app_commands.Choice(name="DOCX (arquivo Word)", value="docx"),
+    discord.app_commands.Choice(name="ODT (arquivo LibreOffice)", value="odt"),
+    discord.app_commands.Choice(name="PDF (arquivo PDF)", value="pdf"),
+]

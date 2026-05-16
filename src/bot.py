@@ -13,6 +13,7 @@ from discord.ui import LayoutView, TextDisplay
 
 from .commands.abnt import register_abnt_command
 from .commands.cronograma import register_cronograma_command
+from .commands.jurisprudencia import register_jurisprudencia_command
 from .commands.peca import register_peca_command
 from .commands.status import register_status_commands
 from .helpers.status_scheduler import start_status_scheduler
@@ -163,6 +164,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     register_peca_command(discord_bot, state, httpx_client, user_has_permission)
     register_cronograma_command(discord_bot, state)
     register_pesquisa_command(discord_bot, state, user_has_permission)
+    register_jurisprudencia_command(discord_bot, state, user_has_permission)
 
     @discord_bot.event
     async def on_ready() -> None:

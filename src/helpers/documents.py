@@ -205,11 +205,22 @@ def _run_pandoc(markdown_text: str, output_format: str) -> bytes:
             "pandoc is required to generate documents. Install it from https://pandoc.org/installing.html"
         ) from exc
     try:
+        if output_format == "pdf":
+            return cast(
+                bytes,
+                pandoc.write(
+                    doc,
+                    format=output_format,
+                    options=["--pdf-engine=xelatex"],
+                ),
+            )
         return cast(bytes, pandoc.write(doc, format=output_format))
     except Exception as exc:
         if output_format == "pdf":
             raise RuntimeError(
-                "Falha ao gerar PDF. Certifique-se de que o pdflatex está instalado (https://www.latex-project.org/get/) ou escolha outro formato."
+                "Falha ao gerar PDF. "
+                + "Certifique-se de que o xelatex está instalado "
+                + "(apt install texlive-xetex) ou escolha outro formato."
             ) from exc
         raise RuntimeError(
             f"pandoc write failed for format '{output_format}': {exc}"

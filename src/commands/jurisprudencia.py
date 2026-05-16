@@ -16,12 +16,8 @@ from ..helpers.documents import generate_document
 from ..helpers.llm import get_provider_error_detail
 from ..helpers.search import fetch_page_content, search_topics
 from ..helpers.send import send_document_result
-from ..helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
-from ..prompts.pesquisa import (
-    EXTENSAO_LABELS,
-    build_pesquisa_messages,
-    build_refinement_message,
-)
+from ..helpers.ui import FORMATO_JURISPRUDENCIA_CHOICES, TRIBUNAL_CHOICES
+from ..prompts.jurisprudencia import build_jurisprudencia_messages
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
     {
@@ -29,16 +25,15 @@ WEB_SEARCH_TOOL: list[dict[str, Any]] = [
         "function": {
             "name": "web_search",
             "description": (
-                "Busca na web por artigos jurídicos, jurisprudência, doutrina e fontes acadêmicas. "
-                "Use quando precisar de informações atualizadas ou fontes específicas não disponíveis "
-                "em seus dados de treinamento."
+                "Busca na web por jurisprudência, acórdãos, ementas e decisões judiciais. "
+                "Use quando precisar encontrar decisões de tribunais brasileiros."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Termo de busca em português para encontrar fontes jurídicas relevantes",
+                        "description": "Termo de busca em português para encontrar jurisprudência relevante",
                     }
                 },
                 "required": ["query"],
@@ -54,8 +49,7 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
             "name": "fetch_page",
             "description": (
                 "Acessa o conteúdo completo de uma página web. "
-                "Use para obter o texto integral de artigos, decisões, doutrina "
-                "e outras fontes acadêmicas encontradas nas buscas. "
+                "Use para obter o texto integral de decisões, acórdãos e ementas. "
                 "Retorna o texto extraído da página (limitado a ~8000 caracteres). "
                 "Só use para URLs retornadas pela ferramenta web_search."
             ),
@@ -64,7 +58,7 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "URL completa da página a ser acessada (ex: https://exemplo.com/artigo)",
+                        "description": "URL completa da página a ser acessada",
                     }
                 },
                 "required": ["url"],
@@ -73,17 +67,18 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
     }
 ]
 
-ALL_PESQUISA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
+JURISPRUDENCIA_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
 
 
-def build_pesquisa_filename(tema: str, user_id: int, output_format: str) -> str:
-    safe_tema = re.sub(r"[^\w\s-]", "", tema).strip().lower()
-    safe_tema = re.sub(r"[-\s]+", "_", safe_tema) or "pesquisa"
-    if len(safe_tema) > 60:
-        safe_tema = safe_tema[:60]
+def build_jurisprudencia_filename(
+    consulta: str, user_id: int, output_format: str
+) -> str:
+    safe_consulta = re.sub(r"[^\w\s-]", "", consulta).strip().lower()
+    safe_consulta = re.sub(r"[-\s]+", "_", safe_consulta) or "jurisprudencia"
+    if len(safe_consulta) > 40:
+        safe_consulta = safe_consulta[:40]
     epoch = int(datetime.now().timestamp())
-    ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
-    return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext_map[output_format]}"
+    return f"jurisprudencia_{safe_consulta}_{user_id}_{epoch}{output_format}"
 
 
 def _format_tool_call(tool_call: Any) -> dict[str, Any]:
@@ -110,57 +105,45 @@ def _format_search_results(results: list[dict[str, Any]]) -> str:
     return json.dumps(formatted, ensure_ascii=False)
 
 
-def register_pesquisa_command(
+def register_jurisprudencia_command(
     discord_bot: commands.Bot,
     state: Any,
     user_has_permission: Any,
 ) -> None:
     @discord_bot.tree.command(
-        name="pesquisa",
-        description="Gere um documento de pesquisa formatado em ABNT a partir de um tema",
+        name="jurisprudencia",
+        description="Pesquise e resuma jurisprudência dos tribunais brasileiros",
     )
     @discord.app_commands.describe(
-        tema="Tema da pesquisa em texto livre (ex: competência FGTS falecimento)",
-        extensao="Nível de detalhe do documento",
-        paginas="Número alvo de páginas (1–50). Sobrepõe a extensão se conflitar.",
-        auto_refinar="Auto-refinamento (self-Q&A) antes da geração",
-        format="Formato do arquivo de saída",
+        consulta="Tema jurídico a ser pesquisado (ex: prescrição intercorrente na execução fiscal)",
+        tribunal="Tribunal onde buscar (padrão: todos)",
+        periodo="Período desejado (ex: 2023-2024, últimos 2 anos, após 2020)",
+        formato="Formato de saída da pesquisa",
     )
     @discord.app_commands.choices(
-        extensao=EXTENSAO_CHOICES,
-        auto_refinar=[
-            discord.app_commands.Choice(name="Sim", value="true"),
-            discord.app_commands.Choice(name="Não (recomendado)", value="false"),
-        ],
-        format=FORMATO_CHOICES,
+        tribunal=TRIBUNAL_CHOICES,
+        formato=FORMATO_JURISPRUDENCIA_CHOICES,
     )
-    async def pesquisa_command(
+    async def jurisprudencia_command(
         interaction: discord.Interaction,
-        tema: str,
-        extensao: str = "padrao",
-        paginas: int = 3,
-        auto_refinar: str = "false",
-        format: discord.app_commands.Choice[str] | None = None,
+        consulta: str,
+        tribunal: discord.app_commands.Choice[str] | None = None,
+        periodo: str | None = None,
+        formato: discord.app_commands.Choice[str] | None = None,
     ) -> None:
-        formato_valor = format.value if format else "docx"
+        tribunal_valor = tribunal.value if tribunal else "todos"
+        formato_valor = formato.value if formato else "docx"
 
-        if not tema.strip():
+        if not consulta.strip():
             await interaction.response.send_message(
-                "Descreva sua pesquisa. Exemplo: " + "`competência FGTS falecimento`",
+                "Descreva o tema da pesquisa de jurisprudência.",
                 ephemeral=True,
             )
             return
 
-        if paginas < 1:
+        if len(consulta.strip()) < 5:
             await interaction.response.send_message(
-                "O número de páginas deve ser no mínimo 1.",
-                ephemeral=True,
-            )
-            return
-
-        if paginas > 50:
-            await interaction.response.send_message(
-                "O número de páginas não pode exceder 50.",
+                "Descreva melhor o tema da pesquisa (mínimo 5 caracteres).",
                 ephemeral=True,
             )
             return
@@ -172,123 +155,42 @@ def register_pesquisa_command(
             return
 
         await interaction.response.send_message(
-            "Pesquisando e gerando o documento... Isso pode levar alguns minutos.",
+            "Buscando jurisprudência... Isso pode levar alguns minutos.",
             ephemeral=True,
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, auto_refinar: %s, formato: %s)",
+            "Jurisprudencia started (user ID: %s, consulta: %r, tribunal: %s, periodo: %s, formato: %s)",
             interaction.user.id,
-            tema[:80],
-            extensao,
-            paginas,
-            auto_refinar == "true",
+            consulta[:80],
+            tribunal_valor,
+            periodo,
             formato_valor,
         )
 
-        messages: list[dict[str, Any]] = build_pesquisa_messages(
-            tema=tema,
-            extensao=extensao,
-            paginas=paginas,
+        messages: list[dict[str, Any]] = build_jurisprudencia_messages(
+            consulta=consulta,
+            tribunal=tribunal_valor,
+            periodo=periodo,
         )
 
-        pesquisa_config = state.config.get("pesquisa", {})
-        max_iterations = pesquisa_config.get("max_tool_iterations", 15)
-        search_results_count = pesquisa_config.get("search_results_per_topic", 8)
-        max_pages = pesquisa_config.get("max_page_fetches", 5)
-        refinement_enabled = auto_refinar == "true"
-
-        model = pesquisa_config.get("model")
-        curr_model = model if model else state.curr_model
+        jur_config = state.config.get("jurisprudencia", {})
+        max_iterations = jur_config.get("max_search_iterations", 12)
+        search_results_count = jur_config.get("search_results_per_query", 8)
+        max_pages = jur_config.get("max_page_fetches", 5)
+        jur_model = jur_config.get("model")
+        curr_model = jur_model if jur_model else state.curr_model
 
         openai_client, openai_config = get_openai_config(state.config, curr_model)
-
-        reasoning_effort: str | None = "high" if refinement_enabled else None
 
         raw_output = ""
         request_started_at = datetime.now().timestamp()
         pages_fetched = 0
 
         try:
-            # Phase 1: Refinement (self-Q&A) — optional pre-generation step
-            if refinement_enabled:
-                saved_len = len(messages)
-                messages.append({"role": "user", "content": build_refinement_message()})
-                logging.info(
-                    "Pesquisa refinement started (user ID: %s, model: %s)",
-                    interaction.user.id,
-                    openai_config["model"],
-                )
-                try:
-                    refinement_task = asyncio.create_task(
-                        openai_client.chat.completions.create(
-                            **build_openai_chat_completion_kwargs(
-                                openai_config,
-                                messages,
-                                stream=False,
-                                tool_choice="none",
-                                reasoning_effort=reasoning_effort,
-                            )
-                        )
-                    )
-                    refinement_completion = await await_task_with_heartbeats(
-                        refinement_task,
-                        (
-                            "Pesquisa refinement still running "
-                            f"(user ID: {interaction.user.id}, "
-                            f"model: {openai_config['model']})"
-                        ),
-                    )
-                    refinement_text = get_completion_text(refinement_completion)
-                    if refinement_text.strip():
-                        messages.append(
-                            {"role": "assistant", "content": refinement_text}
-                        )
-                        logging.info(
-                            "Pesquisa refinement completed (user ID: %s, length: %s)",
-                            interaction.user.id,
-                            len(refinement_text),
-                        )
-                        extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    "Análise concluída. Agora prossiga com a pesquisa web e "
-                                    f"redija o documento com exatamente {paginas} página(s) — nem menos, nem mais "
-                                    f"({extensao_label}). Use as ferramentas de busca para reunir "
-                                    "fontes antes de redigir.\n\n"
-                                    "IMPORTANTE: Comece diretamente pelo conteúdo do documento. "
-                                    'Não inclua introduções como "Aqui está o documento" — '
-                                    "seu output deve iniciar com o título ou primeiro parágrafo."
-                                ),
-                            }
-                        )
-                    else:
-                        logging.warning(
-                            "Pesquisa refinement returned empty output (user ID: %s)",
-                            interaction.user.id,
-                        )
-                        del messages[saved_len:]
-                except APIError as exc:
-                    logging.warning(
-                        "Pesquisa refinement API error (user ID: %s): %s",
-                        interaction.user.id,
-                        get_provider_error_detail(exc),
-                    )
-                    del messages[saved_len:]
-                except Exception:
-                    logging.warning(
-                        "Pesquisa refinement failed (user ID: %s)",
-                        interaction.user.id,
-                        exc_info=True,
-                    )
-                    del messages[saved_len:]
-
-            # Phase 2: Research & generation (tool-calling loop)
             for iteration in range(max_iterations):
                 logging.info(
-                    "Pesquisa LLM iteration %s/%s (user ID: %s, model: %s)",
+                    "Jurisprudencia LLM iteration %s/%s (user ID: %s, model: %s)",
                     iteration + 1,
                     max_iterations,
                     interaction.user.id,
@@ -301,15 +203,14 @@ def register_pesquisa_command(
                             openai_config,
                             messages,
                             stream=False,
-                            tools=ALL_PESQUISA_TOOLS,
-                            reasoning_effort=reasoning_effort,
+                            tools=JURISPRUDENCIA_TOOLS,
                         )
                     )
                 )
                 completion = await await_task_with_heartbeats(
                     completion_task,
                     (
-                        "Pesquisa LLM request still running "
+                        "Jurisprudencia LLM request still running "
                         f"(user ID: {interaction.user.id}, "
                         f"model: {openai_config['model']})"
                     ),
@@ -320,7 +221,6 @@ def register_pesquisa_command(
 
                 choice = completion.choices[0]
 
-                # Handle tool calls
                 if (
                     choice.finish_reason == "tool_calls"
                     and choice.message
@@ -333,7 +233,7 @@ def register_pesquisa_command(
                         for tc in tool_calls
                     ]
                     logging.info(
-                        "Pesquisa tool calls requested (user ID: %s): %s",
+                        "Jurisprudencia tool calls requested (user ID: %s): %s",
                         interaction.user.id,
                         "; ".join(tool_summary),
                     )
@@ -362,7 +262,7 @@ def register_pesquisa_command(
 
                             query = args.get("query", "")
                             logging.info(
-                                "Pesquisa web_search (user ID: %s, query: %s)",
+                                "Jurisprudencia web_search (user ID: %s, query: %s)",
                                 interaction.user.id,
                                 query,
                             )
@@ -375,7 +275,7 @@ def register_pesquisa_command(
                                 search_data = results.get(query, [])
                             except Exception:
                                 logging.exception(
-                                    "Pesquisa web search failed for query: %s",
+                                    "Jurisprudencia web search failed for query: %s",
                                     query,
                                 )
                                 search_data = []
@@ -416,7 +316,7 @@ def register_pesquisa_command(
 
                             url = args.get("url", "")
                             logging.info(
-                                "Pesquisa fetch_page (user ID: %s, url: %s)",
+                                "Jurisprudencia fetch_page (user ID: %s, url: %s)",
                                 interaction.user.id,
                                 url,
                             )
@@ -446,42 +346,37 @@ def register_pesquisa_command(
 
                     continue
 
-                # Handle stop (document complete)
                 if choice.finish_reason == "stop":
                     raw_output = get_completion_text(completion)
                     if raw_output:
                         break
                     continue
 
-                # Handle length (max_tokens reached)
                 if choice.finish_reason == "length":
                     logging.warning(
-                        "Pesquisa LLM reached max_tokens (user ID: %s)",
+                        "Jurisprudencia LLM reached max_tokens (user ID: %s)",
                         interaction.user.id,
                     )
                     raw_output = get_completion_text(completion)
                     break
 
-                # Handle content_filter
                 if choice.finish_reason == "content_filter":
                     logging.error(
-                        "Pesquisa LLM content filter triggered (user ID: %s)",
+                        "Jurisprudencia LLM content filter triggered (user ID: %s)",
                         interaction.user.id,
                     )
                     await interaction.followup.send(
-                        "A geração do documento foi bloqueada pelo filtro de conteúdo do provedor."
+                        "A geração da pesquisa foi bloqueada pelo filtro de conteúdo do provedor."
                     )
                     return
 
-                # Unexpected finish reason — capture whatever content exists
                 raw_output = get_completion_text(completion)
                 if raw_output:
                     break
 
-            # If loop exhausted without content, force final generation
             if not raw_output.strip():
                 logging.warning(
-                    "Pesquisa tool loop exhausted, forcing final generation (user ID: %s)",
+                    "Jurisprudencia tool loop exhausted, forcing final generation (user ID: %s)",
                     interaction.user.id,
                 )
                 force_task = asyncio.create_task(
@@ -491,19 +386,18 @@ def register_pesquisa_command(
                             messages,
                             stream=False,
                             tool_choice="none",
-                            reasoning_effort=reasoning_effort,
                         )
                     )
                 )
                 force_completion = await await_task_with_heartbeats(
                     force_task,
-                    "Pesquisa final generation still running",
+                    "Jurisprudencia final generation still running",
                 )
                 raw_output = get_completion_text(force_completion)
 
             elapsed = datetime.now().timestamp() - request_started_at
             logging.info(
-                "Pesquisa LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
+                "Jurisprudencia LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                 interaction.user.id,
                 openai_config["model"],
                 elapsed,
@@ -511,43 +405,47 @@ def register_pesquisa_command(
 
         except APIError as exc:
             logging.exception(
-                "Provider error while generating pesquisa: %s",
+                "Provider error while generating jurisprudencia: %s",
                 get_provider_error_detail(exc),
             )
             await interaction.followup.send(
-                "O provedor do modelo interrompeu a geração do documento. "
+                "O provedor do modelo interrompeu a geração da pesquisa. "
                 + f"Detalhe do provedor: `{str(exc)[:500]}`"
             )
             return
         except Exception:
-            logging.exception("Error while generating pesquisa document")
+            logging.exception("Error while generating jurisprudencia research")
             await interaction.followup.send(
-                "Não consegui gerar o documento de pesquisa agora. "
+                "Não consegui gerar a pesquisa de jurisprudência agora. "
                 + "Verifique os logs e tente novamente."
             )
             return
 
         if not raw_output.strip():
             await interaction.followup.send(
-                "Não foi possível gerar o conteúdo do documento."
+                "Não foi possível encontrar jurisprudência relevante sobre o tema. "
+                + "Tente refinar a consulta ou ampliar o período."
             )
             return
 
-        # Generate document file
         try:
-            file_bytes, _ = generate_document(raw_output, tema, formato_valor)
-            filename = build_pesquisa_filename(tema, interaction.user.id, formato_valor)
+            file_bytes, ext = generate_document(raw_output, consulta, formato_valor)
+            filename = build_jurisprudencia_filename(consulta, interaction.user.id, ext)
         except Exception:
-            logging.exception("Error while generating document file")
+            logging.exception("Error while generating jurisprudencia document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."
             )
             await send_document_result(
-                interaction, raw_output, "pesquisa.txt", b"", label="Pesquisa"
+                interaction,
+                raw_output,
+                "jurisprudencia.txt",
+                b"",
+                label="Jurisprudência",
             )
             return
 
         await send_document_result(
-            interaction, raw_output, filename, file_bytes, label="Pesquisa"
+            interaction, raw_output, filename, file_bytes, label="Jurisprudência"
         )
