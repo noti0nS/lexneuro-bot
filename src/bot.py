@@ -13,6 +13,7 @@ from discord.ui import LayoutView, TextDisplay
 
 from .commands.slashes.abnt import register_abnt_command
 from .commands.slashes.cronograma import register_cronograma_command
+from .commands.slashes.help import register_help_command
 from .commands.slashes.json_cmd import register_json_command
 from .commands.slashes.jurisprudencia import register_jurisprudencia_command
 from .commands.slashes.model import register_model_command
@@ -192,6 +193,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     )
     httpx_client = httpx.AsyncClient()
 
+    register_help_command(discord_bot, state)
     register_model_command(discord_bot, state)
     register_status_commands(discord_bot, state)
     register_abnt_command(discord_bot, state, httpx_client, user_has_permission)

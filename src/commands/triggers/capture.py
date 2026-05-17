@@ -29,7 +29,7 @@ async def handle_capture(
     lang_match = _LANG_PREFIX_RE.match(text)
     if lang_match:
         lang_override = lang_match.group(1)
-        text = text[lang_match.end():]
+        text = text[lang_match.end() :]
 
     code = _extract_code(text) if text else ""
 

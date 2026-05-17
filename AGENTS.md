@@ -30,7 +30,7 @@ uv run python main.py                  # run the bot
 |---|---|
 | `src/bot.py` | Core bot: message routing, reply chains, LLM streaming, trigger commands |
 | `src/config.py` | YAML config loading, OpenAI client factory, config masking |
-| `src/commands/slashes/` | Slash commands: `/model`, `/abnt`, `/pesquisa`, `/cronograma` |
+| `src/commands/slashes/` | Slash commands: `/help`, `/model`, `/abnt`, `/pesquisa`, `/cronograma` |
 | `src/commands/triggers/` | Trigger commands: `lex!capture` (prefix-based, outside AI chat) |
 | `src/prompts/` | System prompts + markdown reference files loaded at runtime |
 | `src/helpers/` | Async heartbeat, content parsing, DOCX/ODT I/O, web search, UI, LLM |
@@ -65,6 +65,7 @@ uv run python main.py                  # run the bot
 
 ## Slash commands
 
+- `/help` — explica todos os comandos. **Sempre atualize `src/commands/slashes/help.py`** quando uma funcionalidade visível ao usuário for adicionada, removida ou alterada.
 - `/model <name>` — switch LLM model (admin only per `permissions.users.admin_ids`). Autocomplete reloads config on empty input.
 - `/abnt <doc> [instructions]` — evaluate `.docx`/`.odt` for ABNT compliance. Returns structured JSON then reformats into a user message.
 - `/pesquisa` — web search + LLM document generation. Uses DuckDuckGo. Supports depth/audience/format options.

@@ -34,7 +34,9 @@ _LANG_SIGNATURES: dict[str, str] = {
 }
 
 
-def render_code_image(code: str, *, max_lines: int = 200, lang: str | None = None) -> bytes:
+def render_code_image(
+    code: str, *, max_lines: int = 200, lang: str | None = None
+) -> bytes:
 
     lexer = _get_lexer(code, lang)
     code = _truncate_lines(code, max_lines)
