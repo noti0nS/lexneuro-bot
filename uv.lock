@@ -671,6 +671,8 @@ dependencies = [
     { name = "odfpy" },
     { name = "openai" },
     { name = "pandoc" },
+    { name = "pillow" },
+    { name = "pygments" },
     { name = "python-docx" },
     { name = "pyyaml" },
 ]
@@ -692,6 +694,8 @@ requires-dist = [
     { name = "odfpy", specifier = ">=1.4.1" },
     { name = "openai", specifier = ">=2.33.0" },
     { name = "pandoc", specifier = ">=2.4" },
+    { name = "pillow", specifier = ">=12.0.0" },
+    { name = "pygments", specifier = ">=2.19.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]

@@ -1,4 +1,4 @@
-from src.commands.relatorio import (
+from src.commands.slashes.relatorio import (
     RELATORIO_FORMAT_CHOICES,
     build_relatorio_filename,
 )

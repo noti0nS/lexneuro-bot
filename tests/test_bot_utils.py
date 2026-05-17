@@ -8,7 +8,10 @@ from src.bot import (
     should_process_message,
     user_has_permission,
 )
-from src.commands.abnt import parse_abnt_evaluation_json, build_abnt_result_message
+from src.commands.slashes.abnt import (
+    parse_abnt_evaluation_json,
+    build_abnt_result_message,
+)
 from src.helpers.content import get_completion_text
 from src.helpers.documents import attachment_is_supported_word_document
 

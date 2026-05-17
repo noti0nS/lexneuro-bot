@@ -6,11 +6,11 @@ import discord
 from discord.ext import commands
 from openai import APIError
 
-from ..config import build_openai_chat_completion_kwargs, get_openai_config
-from ..helpers.async_utils import await_task_with_heartbeats
-from ..helpers.content import get_completion_text
-from ..helpers.llm import get_provider_error_detail
-from ..prompts.regex import build_regex_messages
+from ...config import build_openai_chat_completion_kwargs, get_openai_config
+from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.content import get_completion_text
+from ...helpers.llm import get_provider_error_detail
+from ...prompts.regex import build_regex_messages
 
 
 def register_regex_command(

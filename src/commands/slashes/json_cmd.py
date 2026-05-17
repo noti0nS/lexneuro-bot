@@ -10,7 +10,7 @@ import httpx
 import yaml
 from discord.ext import commands
 
-from ..helpers.ui import ACAO_JSON_CHOICES
+from ...helpers.ui import ACAO_JSON_CHOICES
 
 JSON_EXTENSIONS = (".json", ".yaml", ".yml")
 JSON_CONTENT_TYPES = (

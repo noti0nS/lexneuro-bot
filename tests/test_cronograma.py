@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from src.commands.cronograma import (
+from src.commands.slashes.cronograma import (
     compute_study_window,
     parse_test_date,
 )

@@ -10,13 +10,13 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ..config import build_openai_chat_completion_kwargs, get_openai_config
-from ..helpers.async_utils import await_task_with_heartbeats
-from ..helpers.content import get_completion_text
-from ..helpers.documents import generate_document
-from ..helpers.llm import get_provider_error_detail
-from ..helpers.send import send_document_result
-from ..prompts.peca import build_peca_messages
+from ...config import build_openai_chat_completion_kwargs, get_openai_config
+from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.content import get_completion_text
+from ...helpers.documents import generate_document
+from ...helpers.llm import get_provider_error_detail
+from ...helpers.send import send_document_result
+from ...prompts.peca import build_peca_messages
 
 PECA_FORMAT_CHOICES = [
     discord.app_commands.Choice(name="PDF", value="pdf"),

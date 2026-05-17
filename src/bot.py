@@ -11,30 +11,60 @@ import httpx
 from discord.ext import commands
 from discord.ui import LayoutView, TextDisplay
 
-from .commands.abnt import register_abnt_command
-from .commands.cronograma import register_cronograma_command
-from .commands.json_cmd import register_json_command
-from .commands.jurisprudencia import register_jurisprudencia_command
-from .commands.peca import register_peca_command
-from .commands.regex import register_regex_command
-from .commands.sql_cmd import register_sql_command
-from .commands.status import register_status_commands
-from .helpers.status_scheduler import start_status_scheduler
-from .commands.model import register_model_command
-from .commands.pesquisa import register_pesquisa_command
-from .commands.relatorio import register_relatorio_command
+from .commands.slashes.abnt import register_abnt_command
+from .commands.slashes.cronograma import register_cronograma_command
+from .commands.slashes.json_cmd import register_json_command
+from .commands.slashes.jurisprudencia import register_jurisprudencia_command
+from .commands.slashes.model import register_model_command
+from .commands.slashes.peca import register_peca_command
+from .commands.slashes.pesquisa import register_pesquisa_command
+from .commands.slashes.regex import register_regex_command
+from .commands.slashes.relatorio import register_relatorio_command
+from .commands.slashes.sql_cmd import register_sql_command
+from .commands.slashes.status import register_status_commands
+from .commands.triggers import get_handler
 from .config import (
     build_openai_chat_completion_kwargs,
     get_config,
     get_openai_config,
 )
+from .helpers.content import sanitize_discord_markdown
+from .helpers.status_scheduler import start_status_scheduler
 from .helpers.ui import (
     EMBED_COLOR_COMPLETE,
     MAX_MESSAGE_NODES,
     STREAMING_INDICATOR,
+    TRIGGER_PREFIX,
     VISION_MODEL_TAGS,
 )
-from .helpers.content import sanitize_discord_markdown
+
+
+async def _handle_trigger(
+    message: discord.Message,
+    state: Any,
+    httpx_client: httpx.AsyncClient,
+) -> None:
+    command_part = message.content[len(TRIGGER_PREFIX) :].lstrip()
+
+    if not command_part:
+        return
+
+    parts = command_part.split(maxsplit=1)
+    cmd_name = parts[0].lower()
+    args = parts[1] if len(parts) > 1 else ""
+
+    handler = get_handler(cmd_name)
+    if handler is None:
+        return
+
+    try:
+        await handler(message, args, state, httpx_client)
+    except Exception:
+        logging.exception(
+            "Trigger command '%s' failed (user ID: %s)",
+            cmd_name,
+            message.author.id,
+        )
 
 
 @dataclass
@@ -188,6 +218,12 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
 
     @discord_bot.event
     async def on_message(new_msg: discord.Message) -> None:
+        content = new_msg.content
+
+        if content.startswith(TRIGGER_PREFIX) and not new_msg.author.bot:
+            await _handle_trigger(new_msg, state, httpx_client)
+            return
+
         bot_user = discord_bot.user
         if bot_user is None:
             return

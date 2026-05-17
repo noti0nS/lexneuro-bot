@@ -9,15 +9,15 @@ import discord
 from discord.ext import commands
 from openai import APIError
 
-from ..config import build_openai_chat_completion_kwargs, get_openai_config
-from ..helpers.async_utils import await_task_with_heartbeats
-from ..helpers.content import get_completion_text
-from ..helpers.documents import generate_document
-from ..helpers.llm import get_provider_error_detail
-from ..helpers.search import fetch_page_content, search_topics
-from ..helpers.send import send_document_result
-from ..helpers.ui import FORMATO_JURISPRUDENCIA_CHOICES, TRIBUNAL_CHOICES
-from ..prompts.jurisprudencia import build_jurisprudencia_messages
+from ...config import build_openai_chat_completion_kwargs, get_openai_config
+from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.content import get_completion_text
+from ...helpers.documents import generate_document
+from ...helpers.llm import get_provider_error_detail
+from ...helpers.search import fetch_page_content, search_topics
+from ...helpers.send import send_document_result
+from ...helpers.ui import FORMATO_JURISPRUDENCIA_CHOICES, TRIBUNAL_CHOICES
+from ...prompts.jurisprudencia import build_jurisprudencia_messages
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
     {

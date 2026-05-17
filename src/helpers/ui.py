@@ -16,6 +16,8 @@ VISION_MODEL_TAGS = (
     "vl",
 )
 
+TRIGGER_PREFIX = "lex!"
+
 EMBED_COLOR_COMPLETE = discord.Color.dark_green()
 EMBED_COLOR_INCOMPLETE = discord.Color.orange()
 
@@ -107,6 +109,63 @@ ACAO_JSON_CHOICES = [
     discord.app_commands.Choice(name="JSON → YAML", value="json2yaml"),
     discord.app_commands.Choice(name="YAML → JSON", value="yaml2json"),
 ]
+
+CAPTURE_FILE_EXTENSIONS = (
+    "py",
+    "cs",
+    "java",
+    "js",
+    "ts",
+    "jsx",
+    "tsx",
+    "go",
+    "rs",
+    "cpp",
+    "c",
+    "h",
+    "cs",
+    "rb",
+    "php",
+    "swift",
+    "kt",
+    "lua",
+    "sh",
+    "bash",
+    "ps1",
+    "sql",
+    "html",
+    "css",
+    "scss",
+    "yaml",
+    "yml",
+    "json",
+    "toml",
+    "xml",
+    "md",
+    "r",
+    "dart",
+    "ex",
+    "exs",
+    "elm",
+    "hs",
+    "clj",
+    "erl",
+    "fs",
+    "fsx",
+    "scala",
+    "groovy",
+    "pl",
+    "vim",
+    "make",
+    "cmake",
+    "docker",
+    "nginx",
+    "tf",
+    "hcl",
+    "nim",
+    "zig",
+    "jl",
+)
 
 FORMATO_JURISPRUDENCIA_CHOICES = [
     discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),

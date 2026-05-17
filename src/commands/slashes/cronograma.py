@@ -7,20 +7,20 @@ import discord
 from discord.ext import commands
 from openai import APIError
 
-from ..config import (
+from ...config import (
     OpenAIRequestConfig,
     build_openai_chat_completion_kwargs,
     get_openai_config,
 )
-from ..helpers.documents import generate_document
-from ..helpers.llm import get_provider_error_detail
-from ..helpers.ui import (
+from ...helpers.documents import generate_document
+from ...helpers.llm import get_provider_error_detail
+from ...helpers.ui import (
     FORMAT_EMOJIS,
     FORMAT_LABELS,
     PYTHON_WEEKDAY,
     WEEKDAY_OPTIONS,
 )
-from ..prompts.cronograma import build_cronograma_messages, format_date_pt
+from ...prompts.cronograma import build_cronograma_messages, format_date_pt
 
 
 def parse_test_date(raw: str) -> date:

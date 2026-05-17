@@ -1,6 +1,6 @@
 import inspect
 
-from src.commands.jurisprudencia import (
+from src.commands.slashes.jurisprudencia import (
     JURISPRUDENCIA_TOOLS,
     build_jurisprudencia_filename,
 )

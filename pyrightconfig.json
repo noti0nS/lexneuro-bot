@@ -7,6 +7,7 @@
   "reportUnknownVariableType": false,
   "reportUnknownArgumentType": false,
   "reportUnnecessaryCast": false,
+  "reportImportCycles": false,
 
   "reportUnannotatedClassAttribute": false,
   "reportUnusedFunction": false,

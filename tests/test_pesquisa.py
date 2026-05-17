@@ -4,7 +4,7 @@ from src.prompts.pesquisa import (
     build_pesquisa_messages,
     build_refinement_message,
 )
-from src.commands.pesquisa import build_pesquisa_filename
+from src.commands.slashes.pesquisa import build_pesquisa_filename
 from src.helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 
 

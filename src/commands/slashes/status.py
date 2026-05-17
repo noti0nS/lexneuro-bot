@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands
 
-from ..db import get_connection
-from ..helpers.status_db import get_latest_message
+from ...db import get_connection
+from ...helpers.status_db import get_latest_message
 
 
 def _is_admin(user: discord.User | discord.Member, state: object) -> bool:
@@ -41,7 +41,7 @@ def register_status_commands(
             )
             return
 
-        from ..helpers.status_scheduler import update_status
+        from ...helpers.status_scheduler import update_status
 
         conn = get_connection()
         try:

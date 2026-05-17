@@ -9,15 +9,15 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ..config import build_openai_chat_completion_kwargs, get_openai_config
-from ..helpers.async_utils import await_task_with_heartbeats
-from ..helpers.content import get_completion_text
-from ..helpers.documents import (
+from ...config import build_openai_chat_completion_kwargs, get_openai_config
+from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.content import get_completion_text
+from ...helpers.documents import (
     attachment_is_supported_word_document,
     read_word_attachment,
 )
-from ..helpers.llm import get_provider_error_detail
-from ..prompts import build_abnt_messages
+from ...helpers.llm import get_provider_error_detail
+from ...prompts import build_abnt_messages
 
 
 def parse_abnt_evaluation_json(raw_content: str) -> tuple[float, list[str]]:

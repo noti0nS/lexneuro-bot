@@ -23,19 +23,40 @@ LexNeuro is a Discord bot that turns your server into an AI-powered study and co
 
 ## Commands
 
+### Slash commands
+
 ### `/pesquisa` — Academic document generation
+
 Produces articles, legal briefs, or technical documentation with integrated web search (DuckDuckGo). The model runs an agentic loop of searching and reading pages before writing.
 
 Three contexts: **Academic / ABNT**, **NPJ / Legal Brief**, **Programming / Neuro**. Three length levels: short (~1 page), standard (~3 pages), full (5+ pages). Exports to `.docx` and `.odt`.
 
 ### `/abnt` — ABNT compliance evaluation
+
 Upload a `.docx` or `.odt` file and receive a score (0–1) with a list of structural improvements per ABNT standards. Accepts optional instructions to focus the evaluation.
 
 ### `/cronograma` — Personalized study schedule
+
 Set the exam date and subjects. The bot shows an interactive weekday picker, calculates available study days, and generates a schedule exportable as PDF, Markdown, DOCX, or ODT.
 
 ### `/model` — Model switching
+
 Admins can switch between configured LLM models without restarting the bot. Autocomplete loads models from `config.yaml` in real time.
+
+### Trigger commands (`lex!` prefix)
+
+Commands prefixed with `lex!` run outside the AI chat loop and capture the rest of the message as arguments. They don't require a mention or reply chain.
+
+#### `lex!capture` — Code snippet as image
+
+Renders a code snippet in a PNG format (syntax highlighting, gradient background, shadow). Send the code after the command or attach a file.
+
+```
+lex!capture def hello():
+    print("hello world")
+```
+
+Accepts code blocks with ` ` ``. The theme is fixed (monokai 18px). The limit is configurable in `capture.max_lines` (default 200).
 
 ---
 
@@ -44,6 +65,7 @@ Admins can switch between configured LLM models without restarting the bot. Auto
 The bot understands **reply chains**: reply to the bot's own message to continue the conversation with full context. Consecutive messages from the same author are automatically chained. Just mention the bot (`@LexNeuro`) to start or branch a conversation.
 
 Supports:
+
 - Image attachments (vision models)
 - Text files (`.txt`, `.py`, `.c`, etc.)
 - Streamed responses with automatic long-message splitting
@@ -55,18 +77,18 @@ Supports:
 
 Any OpenAI-compatible API:
 
-| Provider | Example |
-|---|---|
-| OpenAI | `openai/gpt-5` |
-| OpenRouter | `openrouter/claude-4` |
-| Groq | `groq/llama-4` |
-| DeepSeek | `deepseek/deepseek-chat` |
-| Google Gemini | `gemini/gemini-2.5-pro` |
-| xAI | `xai/grok-4` |
-| Mistral | `mistral/mistral-large` |
-| Ollama (local) | `ollama/llama4` |
-| LM Studio (local) | `lm-studio/qwen-3` |
-| vLLM (local) | `vllm/deepseek-r1` |
+| Provider          | Example                  |
+| ----------------- | ------------------------ |
+| OpenAI            | `openai/gpt-5`           |
+| OpenRouter        | `openrouter/claude-4`    |
+| Groq              | `groq/llama-4`           |
+| DeepSeek          | `deepseek/deepseek-chat` |
+| Google Gemini     | `gemini/gemini-2.5-pro`  |
+| xAI               | `xai/grok-4`             |
+| Mistral           | `mistral/mistral-large`  |
+| Ollama (local)    | `ollama/llama4`          |
+| LM Studio (local) | `lm-studio/qwen-3`       |
+| vLLM (local)      | `vllm/deepseek-r1`       |
 
 ---
 
@@ -125,12 +147,13 @@ docker compose up
 ```
 
 This starts two services:
+
 - **`bot`** — the LexNeuro bot, reading `config.yaml` via a read-only bind mount.
 - **`litellm`** — a LiteLLM proxy sidecar that handles auth, rate limits, load-balancing, and fallbacks across all your providers.
 
 The bot communicates with LiteLLM under the `litellm/` provider prefix. You can still use direct providers (e.g. `openai/gpt-5`) — the wildcard passthrough in `litellm_config.yaml` relays them unchanged.
 
-*Note: the Dockerfile installs `pandoc` and `texlive` for `.docx`/`.odt`/`.pdf` export. The image is heavy (~1.5 GB). If you don't need document export you can slim it down.*
+_Note: the Dockerfile installs `pandoc` and `texlive` for `.docx`/`.odt`/`.pdf` export. The image is heavy (~1.5 GB). If you don't need document export you can slim it down._
 
 ### 3b. Run without Docker
 
@@ -156,14 +179,15 @@ Check the logs on startup. You should see the masked config dump and the bot inv
 
 ## Project structure
 
-| Directory | Purpose |
-|---|---|
-| `src/` | Core bot code |
-| `src/commands/` | Slash commands (`/pesquisa`, `/abnt`, `/cronograma`, `/model`) |
-| `src/helpers/` | Utilities: LLM streaming, web search, document I/O, UI, status |
-| `src/prompts/` | System prompts and formatting references |
-| `tests/` | Automated tests |
-| `assets/` | Images and visual assets |
+| Directory                | Purpose                                                        |
+| ------------------------ | -------------------------------------------------------------- |
+| `src/`                   | Core bot code                                                  |
+| `src/commands/slashes/`  | Slash commands (`/pesquisa`, `/abnt`, `/cronograma`, `/model`) |
+| `src/commands/triggers/` | Trigger commands (`lex!capture`)                               |
+| `src/helpers/`           | Utilities: LLM streaming, web search, document I/O, UI, status |
+| `src/prompts/`           | System prompts and formatting references                       |
+| `tests/`                 | Automated tests                                                |
+| `assets/`                | Images and visual assets                                       |
 
 ---
 

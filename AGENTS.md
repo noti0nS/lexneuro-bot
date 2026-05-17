@@ -22,15 +22,16 @@ uv run python main.py                  # run the bot
 
 - `main.py` → `src/main.py:run()` → `src/bot.py:create_discord_bot()` — this is the bot lifecycle.
 - `main.py` in the repo root is a dead stub, not the entrypoint.
-- `src/bot.py` owns the `on_message` handler, `MsgNode` cache, reply chains, LLM streaming, and response splitting. All slash commands are registered from there.
+- `src/bot.py` owns the `on_message` handler, `MsgNode` cache, reply chains, LLM streaming, response splitting, and trigger-command routing. All slash commands are registered from there.
 
 ## Package layout
 
 | Directory | Purpose |
 |---|---|
-| `src/bot.py` | Core bot: message routing, reply chains, LLM streaming |
+| `src/bot.py` | Core bot: message routing, reply chains, LLM streaming, trigger commands |
 | `src/config.py` | YAML config loading, OpenAI client factory, config masking |
-| `src/commands/` | Slash commands: `/model`, `/abnt`, `/pesquisa`, `/cronograma` |
+| `src/commands/slashes/` | Slash commands: `/model`, `/abnt`, `/pesquisa`, `/cronograma` |
+| `src/commands/triggers/` | Trigger commands: `lex!capture` (prefix-based, outside AI chat) |
 | `src/prompts/` | System prompts + markdown reference files loaded at runtime |
 | `src/helpers/` | Async heartbeat, content parsing, DOCX/ODT I/O, web search, UI, LLM |
 
@@ -67,3 +68,11 @@ uv run python main.py                  # run the bot
 - `/model <name>` — switch LLM model (admin only per `permissions.users.admin_ids`). Autocomplete reloads config on empty input.
 - `/abnt <doc> [instructions]` — evaluate `.docx`/`.odt` for ABNT compliance. Returns structured JSON then reformats into a user message.
 - `/pesquisa` — web search + LLM document generation. Uses DuckDuckGo. Supports depth/audience/format options.
+
+## Trigger commands
+
+- Prefix: `TRIGGER_PREFIX` constant in `src/helpers/ui.py` (default `"lex!"`).
+- Commands live in `src/commands/triggers/`. Each registers via the `@trigger("name")` decorator from `__init__.py`.
+- The bot's `on_message` handler checks for the prefix BEFORE any AI chat logic. If matched, the message is routed to the trigger handler and NOT processed by the LLM.
+- Trigger handlers receive `(message, args, state, httpx_client)` where `args` is the text after the command name.
+- Example: `lex!capture print("hello")` → `cmd_name="capture"`, `args='print("hello")'`.

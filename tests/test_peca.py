@@ -3,7 +3,7 @@ from typing import cast
 
 import discord
 
-from src.commands.peca import (
+from src.commands.slashes.peca import (
     AREA_CHOICES,
     PECA_FORMAT_CHOICES,
     TIPO_CHOICES,
