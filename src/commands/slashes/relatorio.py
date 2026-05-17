@@ -14,16 +14,10 @@ from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.ai_tools import ContentFilterError, run_research_loop
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.documents import generate_document
+from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import get_provider_error_detail
 from ...helpers.send import send_document_result
 from ...prompts.relatorio import build_relatorio_messages
-
-RELATORIO_FORMAT_CHOICES = [
-    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
-    discord.app_commands.Choice(name="PDF", value="pdf"),
-]
 
 SUPPORTED_INPUT_CONTENT_TYPES = (
     "application/pdf",
@@ -78,14 +72,13 @@ def _extract_file_text(file_bytes: bytes, filename: str) -> str:
     return result.text_content
 
 
-def build_relatorio_filename(titulo: str, user_id: int, output_format: str) -> str:
+def build_relatorio_filename(titulo: str, user_id: int, ext: str) -> str:
     safe_titulo = re.sub(r"[^\w\s-]", "", titulo).strip().lower()
     safe_titulo = re.sub(r"[-\s]+", "_", safe_titulo) or "relatorio"
     if len(safe_titulo) > 60:
         safe_titulo = safe_titulo[:60]
     epoch = int(datetime.now().timestamp())
-    ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
-    return f"relatorio_{safe_titulo}_{user_id}_{epoch}{ext_map[output_format]}"
+    return f"relatorio_{safe_titulo}_{user_id}_{epoch}{ext}"
 
 
 def register_relatorio_command(
@@ -114,7 +107,7 @@ def register_relatorio_command(
             discord.app_commands.Choice(name="Sim", value="true"),
             discord.app_commands.Choice(name="Não (recomendado)", value="false"),
         ],
-        formato=RELATORIO_FORMAT_CHOICES,
+        formato=DOCUMENT_FORMAT_CHOICES,
     )
     async def relatorio_command(
         interaction: discord.Interaction,
@@ -335,10 +328,8 @@ def register_relatorio_command(
 
         # Generate document file
         try:
-            file_bytes, _ = generate_document(raw_output, titulo, formato_valor)
-            filename = build_relatorio_filename(
-                titulo, interaction.user.id, formato_valor
-            )
+            file_bytes, ext = generate_document(raw_output, titulo, formato_valor)
+            filename = build_relatorio_filename(titulo, interaction.user.id, ext)
         except Exception:
             logging.exception("Error while generating relatorio document file")
             await interaction.followup.send(

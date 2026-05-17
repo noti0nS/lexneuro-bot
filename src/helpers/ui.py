@@ -1,3 +1,5 @@
+from typing import override
+
 import discord
 
 VISION_MODEL_TAGS = (
@@ -32,26 +34,6 @@ SUPPORTED_WORD_CONTENT_TYPES = (
     "application/vnd.oasis.opendocument.text",
 )
 
-WEEKDAY_OPTIONS: list[discord.app_commands.Choice[str]] = [
-    discord.app_commands.Choice(name="Segunda-feira", value="segunda"),
-    discord.app_commands.Choice(name="Terça-feira", value="terca"),
-    discord.app_commands.Choice(name="Quarta-feira", value="quarta"),
-    discord.app_commands.Choice(name="Quinta-feira", value="quinta"),
-    discord.app_commands.Choice(name="Sexta-feira", value="sexta"),
-    discord.app_commands.Choice(name="Sábado", value="sabado"),
-    discord.app_commands.Choice(name="Domingo", value="domingo"),
-]
-
-PYTHON_WEEKDAY: dict[str, int] = {
-    "segunda": 0,
-    "terca": 1,
-    "quarta": 2,
-    "quinta": 3,
-    "sexta": 4,
-    "sabado": 5,
-    "domingo": 6,
-}
-
 FORMAT_LABELS: dict[str, str] = {
     "pdf": "PDF",
     "md": "Markdown",
@@ -65,50 +47,6 @@ FORMAT_EMOJIS: dict[str, str] = {
     "docx": "\U0001f4d8",
     "odt": "\U0001f4d7",
 }
-
-EXTENSAO_CHOICES = [
-    discord.app_commands.Choice(name="Direto ao Ponto (~1 pág. / 500w)", value="curto"),
-    discord.app_commands.Choice(name="Padrão (~3 págs. / 1.500w)", value="padrao"),
-    discord.app_commands.Choice(
-        name="Dossiê Completo (5+ págs. / 2.500+w)", value="completo"
-    ),
-]
-
-FORMATO_CHOICES = [
-    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
-]
-
-TRIBUNAL_CHOICES = [
-    discord.app_commands.Choice(name="Todos os tribunais", value="todos"),
-    discord.app_commands.Choice(name="STF — Supremo Tribunal Federal", value="stf"),
-    discord.app_commands.Choice(name="STJ — Superior Tribunal de Justiça", value="stj"),
-    discord.app_commands.Choice(
-        name="TST — Tribunal Superior do Trabalho", value="tst"
-    ),
-    discord.app_commands.Choice(
-        name="TJDFT — Tribunal de Justiça do DF", value="tjdft"
-    ),
-    discord.app_commands.Choice(name="TJSP — Tribunal de Justiça de SP", value="tjsp"),
-    discord.app_commands.Choice(name="TJRJ — Tribunal de Justiça do RJ", value="tjRJ"),
-]
-
-DIALETO_SQL_CHOICES = [
-    discord.app_commands.Choice(name="Genérico (padrão SQL)", value="generico"),
-    discord.app_commands.Choice(name="PostgreSQL", value="postgresql"),
-    discord.app_commands.Choice(name="MySQL / MariaDB", value="mysql"),
-    discord.app_commands.Choice(name="SQLite", value="sqlite"),
-    discord.app_commands.Choice(name="SQL Server", value="sqlserver"),
-    discord.app_commands.Choice(name="Oracle", value="oracle"),
-]
-
-ACAO_JSON_CHOICES = [
-    discord.app_commands.Choice(name="Validar", value="validar"),
-    discord.app_commands.Choice(name="Formatar (indentado)", value="formatar"),
-    discord.app_commands.Choice(name="Minificar", value="minificar"),
-    discord.app_commands.Choice(name="JSON → YAML", value="json2yaml"),
-    discord.app_commands.Choice(name="YAML → JSON", value="yaml2json"),
-]
 
 CAPTURE_FILE_EXTENSIONS = (
     "py",
@@ -167,9 +105,39 @@ CAPTURE_FILE_EXTENSIONS = (
     "jl",
 )
 
-FORMATO_JURISPRUDENCIA_CHOICES = [
-    discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),
-    discord.app_commands.Choice(name="DOCX (arquivo Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (arquivo LibreOffice)", value="odt"),
-    discord.app_commands.Choice(name="PDF (arquivo PDF)", value="pdf"),
-]
+
+class FormatButton(discord.ui.Button["FormatSelectView"]):
+    def __init__(self, fmt: str, label: str, emoji: str) -> None:
+        super().__init__(
+            label=label,
+            emoji=emoji,
+            style=discord.ButtonStyle.primary
+            if fmt == "pdf"
+            else discord.ButtonStyle.secondary,
+        )
+        self._fmt = fmt
+
+    @override
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = self.view
+        if view is None:
+            return
+        await view.handle_format(interaction, self._fmt)
+
+
+class FormatSelectView(discord.ui.View):
+    def __init__(self, *, timeout: float | None = None) -> None:
+        super().__init__(timeout=timeout)
+        for fmt in ("pdf", "md", "docx", "odt"):
+            self.add_item(FormatButton(fmt, FORMAT_LABELS[fmt], FORMAT_EMOJIS[fmt]))
+
+    async def on_format_selected(
+        self, interaction: discord.Interaction, fmt: str
+    ) -> None:
+        raise NotImplementedError
+
+    async def handle_format(self, interaction: discord.Interaction, fmt: str) -> None:
+        for child in self.children:
+            child.disabled = True  # pyright: ignore[reportAttributeAccessIssue]
+        await interaction.response.edit_message(view=self)
+        await self.on_format_selected(interaction, fmt)

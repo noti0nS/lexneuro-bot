@@ -1,10 +1,11 @@
 import inspect
 
 from src.commands.slashes.jurisprudencia import (
-    JURISPRUDENCIA_TOOLS,
+    TRIBUNAL_CHOICES,
     build_jurisprudencia_filename,
 )
-from src.helpers.ui import FORMATO_JURISPRUDENCIA_CHOICES, TRIBUNAL_CHOICES
+from src.helpers.ai_tools import ALL_RESEARCH_TOOLS
+from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.jurisprudencia import (
     JURISPRUDENCIA_SYSTEM_PROMPT,
     TRIBUNAL_LABELS,
@@ -93,7 +94,7 @@ def test_tribunal_choices_count_within_discord_limit() -> None:
 
 
 def test_format_choices_count() -> None:
-    assert len(FORMATO_JURISPRUDENCIA_CHOICES) == 4
+    assert len(DOCUMENT_FORMAT_CHOICES) == 4
 
 
 def test_system_prompt_contains_court_domains() -> None:
@@ -111,14 +112,14 @@ def test_system_prompt_contains_conclusao_section() -> None:
 
 
 def test_tool_schemas_defined() -> None:
-    assert len(JURISPRUDENCIA_TOOLS) == 2
-    tool_names = [t["function"]["name"] for t in JURISPRUDENCIA_TOOLS]
+    assert len(ALL_RESEARCH_TOOLS) == 2
+    tool_names = [t["function"]["name"] for t in ALL_RESEARCH_TOOLS]
     assert "web_search" in tool_names
     assert "fetch_page" in tool_names
 
 
 def test_tool_schemas_valid_openai_format() -> None:
-    for tool in JURISPRUDENCIA_TOOLS:
+    for tool in ALL_RESEARCH_TOOLS:
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool

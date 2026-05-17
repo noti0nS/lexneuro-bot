@@ -5,12 +5,12 @@ from http.server import HTTPServer
 
 import pytest
 
-from src.main import _HealthHandler  # pyright: ignore[reportPrivateUsage]
+from src.helpers.health_server import HealthHandler
 
 
 @pytest.fixture
 def health_server() -> Iterator[HTTPServer]:
-    server = HTTPServer(("127.0.0.1", 0), _HealthHandler)
+    server = HTTPServer(("127.0.0.1", 0), HealthHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

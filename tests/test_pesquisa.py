@@ -1,11 +1,11 @@
+from src.commands.slashes.pesquisa import EXTENSAO_CHOICES, build_pesquisa_filename
+from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.pesquisa import (
     EXTENSAO_LABELS,
     REFINEMENT_PROMPT,
     build_pesquisa_messages,
     build_refinement_message,
 )
-from src.commands.slashes.pesquisa import build_pesquisa_filename
-from src.helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 
 
 def test_build_messages_defaults() -> None:
@@ -101,27 +101,25 @@ def test_extensao_choices_count() -> None:
 
 
 def test_format_choices_count() -> None:
-    assert len(FORMATO_CHOICES) == 2
+    assert len(DOCUMENT_FORMAT_CHOICES) == 4
 
 
 def test_build_pesquisa_filename_docx() -> None:
-    filename = build_pesquisa_filename(
-        "competência FGTS", user_id=123456, output_format="docx"
-    )
+    filename = build_pesquisa_filename("competência FGTS", user_id=123456, ext=".docx")
     assert filename.startswith("pesquisa_")
     assert filename.endswith(".docx")
     assert "_123456_" in filename
 
 
 def test_build_pesquisa_filename_odt() -> None:
-    filename = build_pesquisa_filename("test topic", user_id=789, output_format="odt")
+    filename = build_pesquisa_filename("test topic", user_id=789, ext=".odt")
     assert "_789_" in filename
     assert filename.endswith(".odt")
 
 
 def test_build_pesquisa_filename_sanitizes_special_chars() -> None:
     filename = build_pesquisa_filename(
-        "alvará judicial @#$% 123", user_id=5, output_format="docx"
+        "alvará judicial @#$% 123", user_id=5, ext=".docx"
     )
     assert "@" not in filename
     assert "#" not in filename

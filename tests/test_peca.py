@@ -5,7 +5,6 @@ import discord
 
 from src.commands.slashes.peca import (
     AREA_CHOICES,
-    PECA_FORMAT_CHOICES,
     TIPO_CHOICES,
     attachment_is_supported,
     build_peca_filename,
@@ -13,6 +12,7 @@ from src.commands.slashes.peca import (
     area_autocomplete,
     tipo_autocomplete,
 )
+from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.peca import PECA_SYSTEM_PROMPT, build_peca_messages
 
 
@@ -102,34 +102,32 @@ def test_system_prompt_no_generic_titles() -> None:
 
 
 def test_build_peca_filename_docx() -> None:
-    filename = build_peca_filename(
-        "Substabelecimento", user_id=123456, output_format="docx"
-    )
+    filename = build_peca_filename("Substabelecimento", user_id=123456, ext=".docx")
     assert filename.startswith("peca_substabelecimento_123456_")
     assert filename.endswith(".docx")
 
 
 def test_build_peca_filename_pdf() -> None:
-    filename = build_peca_filename("Contestação", user_id=789, output_format="pdf")
+    filename = build_peca_filename("Contestação", user_id=789, ext=".pdf")
     assert "peca_contesta" in filename
     assert "_789_" in filename
     assert filename.endswith(".pdf")
 
 
 def test_build_peca_filename_odt() -> None:
-    filename = build_peca_filename("Alvará", user_id=42, output_format="odt")
+    filename = build_peca_filename("Alvará", user_id=42, ext=".odt")
     assert "_42_" in filename
     assert filename.endswith(".odt")
 
 
 def test_build_peca_filename_none_tipo_fallback() -> None:
-    filename = build_peca_filename(None, user_id=1, output_format="docx")
+    filename = build_peca_filename(None, user_id=1, ext=".docx")
     assert filename.startswith("peca_peca_1_")
     assert filename.endswith(".docx")
 
 
 def test_build_peca_filename_sanitizes_special_chars() -> None:
-    filename = build_peca_filename("ação @#$% 123", user_id=5, output_format="docx")
+    filename = build_peca_filename("ação @#$% 123", user_id=5, ext=".docx")
     assert "@" not in filename
     assert "#" not in filename
     assert "$" not in filename
@@ -137,9 +135,9 @@ def test_build_peca_filename_sanitizes_special_chars() -> None:
 
 
 def test_format_choices_count() -> None:
-    assert len(PECA_FORMAT_CHOICES) == 3
-    values = {choice.value for choice in PECA_FORMAT_CHOICES}
-    assert values == {"pdf", "docx", "odt"}
+    assert len(DOCUMENT_FORMAT_CHOICES) == 4
+    values = {choice.value for choice in DOCUMENT_FORMAT_CHOICES}
+    assert values == {"md", "docx", "odt", "pdf"}
 
 
 def test_attachment_is_supported_docx() -> None:

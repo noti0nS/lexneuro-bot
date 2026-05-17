@@ -14,13 +14,28 @@ from ...config import (
 )
 from ...helpers.documents import generate_document
 from ...helpers.llm import get_provider_error_detail
-from ...helpers.ui import (
-    FORMAT_EMOJIS,
-    FORMAT_LABELS,
-    PYTHON_WEEKDAY,
-    WEEKDAY_OPTIONS,
-)
+from ...helpers.ui import FormatSelectView
 from ...prompts.cronograma import build_cronograma_messages, format_date_pt
+
+WEEKDAY_OPTIONS: list[discord.app_commands.Choice[str]] = [
+    discord.app_commands.Choice(name="Segunda-feira", value="segunda"),
+    discord.app_commands.Choice(name="Terça-feira", value="terca"),
+    discord.app_commands.Choice(name="Quarta-feira", value="quarta"),
+    discord.app_commands.Choice(name="Quinta-feira", value="quinta"),
+    discord.app_commands.Choice(name="Sexta-feira", value="sexta"),
+    discord.app_commands.Choice(name="Sábado", value="sabado"),
+    discord.app_commands.Choice(name="Domingo", value="domingo"),
+]
+
+PYTHON_WEEKDAY: dict[str, int] = {
+    "segunda": 0,
+    "terca": 1,
+    "quarta": 2,
+    "quinta": 3,
+    "sexta": 4,
+    "sabado": 5,
+    "domingo": 6,
+}
 
 
 def parse_test_date(raw: str) -> date:
@@ -247,7 +262,7 @@ class WeekdaySelectView(discord.ui.View):
             await interaction.followup.send(error)
             return
 
-        view = FormatSelectView(
+        view = CronogramaFormatView(
             msg_target=self._msg_target,
             state=self._state,
             test_date=self._test_date,
@@ -263,7 +278,7 @@ class WeekdaySelectView(discord.ui.View):
 
 
 @final
-class FormatSelectView(discord.ui.View):
+class CronogramaFormatView(FormatSelectView):
     def __init__(
         self,
         *,
@@ -284,14 +299,10 @@ class FormatSelectView(discord.ui.View):
         self._instructions = instructions
         self._calendar_dates = calendar_dates
 
-        for fmt in ("pdf", "md", "docx", "odt"):
-            self.add_item(FormatButton(fmt, FORMAT_LABELS[fmt], FORMAT_EMOJIS[fmt]))
-
-    async def handle_format(self, interaction: discord.Interaction, fmt: str) -> None:
-        for child in self.children:
-            child.disabled = True  # pyright: ignore[reportAttributeAccessIssue]
-        await interaction.response.edit_message(view=self)
-
+    @override
+    async def on_format_selected(
+        self, interaction: discord.Interaction, fmt: str
+    ) -> None:
         day_count = len(self._calendar_dates)
         await self._msg_target.send(
             f"Gerando cronograma para {day_count} dia{'s' if day_count != 1 else ''} de estudo..."
@@ -340,26 +351,6 @@ class FormatSelectView(discord.ui.View):
         )
         discord_file = discord.File(BytesIO(file_bytes), filename=filename)
         await self._msg_target.send(file=discord_file)
-
-
-@final
-class FormatButton(discord.ui.Button["FormatSelectView"]):
-    def __init__(self, fmt: str, label: str, emoji: str) -> None:
-        super().__init__(
-            label=label,
-            emoji=emoji,
-            style=discord.ButtonStyle.primary
-            if fmt == "pdf"
-            else discord.ButtonStyle.secondary,
-        )
-        self._fmt = fmt
-
-    @override
-    async def callback(self, interaction: discord.Interaction) -> None:
-        view = self.view
-        if view is None:
-            return
-        await view.handle_format(interaction, self._fmt)
 
 
 def register_cronograma_command(

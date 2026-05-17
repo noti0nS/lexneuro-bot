@@ -10,7 +10,13 @@ import httpx
 import yaml
 from discord.ext import commands
 
-from ...helpers.ui import ACAO_JSON_CHOICES
+ACAO_JSON_CHOICES = [
+    discord.app_commands.Choice(name="Validar", value="validar"),
+    discord.app_commands.Choice(name="Formatar (indentado)", value="formatar"),
+    discord.app_commands.Choice(name="Minificar", value="minificar"),
+    discord.app_commands.Choice(name="JSON → YAML", value="json2yaml"),
+    discord.app_commands.Choice(name="YAML → JSON", value="yaml2json"),
+]
 
 JSON_EXTENSIONS = (".json", ".yaml", ".yml")
 JSON_CONTENT_TYPES = (

@@ -11,8 +11,16 @@ from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
 from ...helpers.llm import get_provider_error_detail
-from ...helpers.ui import DIALETO_SQL_CHOICES
 from ...prompts.sql_cmd import build_sql_messages
+
+DIALETO_SQL_CHOICES = [
+    discord.app_commands.Choice(name="Genérico (padrão SQL)", value="generico"),
+    discord.app_commands.Choice(name="PostgreSQL", value="postgresql"),
+    discord.app_commands.Choice(name="MySQL / MariaDB", value="mysql"),
+    discord.app_commands.Choice(name="SQLite", value="sqlite"),
+    discord.app_commands.Choice(name="SQL Server", value="sqlserver"),
+    discord.app_commands.Choice(name="Oracle", value="oracle"),
+]
 
 SQL_EXTENSIONS = (".sql",)
 SQL_CONTENT_TYPES = (

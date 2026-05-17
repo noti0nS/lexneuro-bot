@@ -15,25 +15,31 @@ from ...helpers.ai_tools import (
 )
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.documents import generate_document
+from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import get_provider_error_detail
 from ...helpers.send import send_document_result
-from ...helpers.ui import EXTENSAO_CHOICES, FORMATO_CHOICES
 from ...prompts.pesquisa import (
     EXTENSAO_LABELS,
     build_pesquisa_messages,
     build_refinement_message,
 )
 
+EXTENSAO_CHOICES = [
+    discord.app_commands.Choice(name="Direto ao Ponto (~1 pág. / 500w)", value="curto"),
+    discord.app_commands.Choice(name="Padrão (~3 págs. / 1.500w)", value="padrao"),
+    discord.app_commands.Choice(
+        name="Dossiê Completo (5+ págs. / 2.500+w)", value="completo"
+    ),
+]
 
-def build_pesquisa_filename(tema: str, user_id: int, output_format: str) -> str:
+
+def build_pesquisa_filename(tema: str, user_id: int, ext: str) -> str:
     safe_tema = re.sub(r"[^\w\s-]", "", tema).strip().lower()
     safe_tema = re.sub(r"[-\s]+", "_", safe_tema) or "pesquisa"
     if len(safe_tema) > 60:
         safe_tema = safe_tema[:60]
     epoch = int(datetime.now().timestamp())
-    ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
-    return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext_map[output_format]}"
+    return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext}"
 
 
 def register_pesquisa_command(
@@ -58,7 +64,7 @@ def register_pesquisa_command(
             discord.app_commands.Choice(name="Sim", value="true"),
             discord.app_commands.Choice(name="Não (recomendado)", value="false"),
         ],
-        format=FORMATO_CHOICES,
+        format=DOCUMENT_FORMAT_CHOICES,
     )
     async def pesquisa_command(
         interaction: discord.Interaction,
@@ -263,8 +269,8 @@ def register_pesquisa_command(
 
         # Generate document file
         try:
-            file_bytes, _ = generate_document(raw_output, tema, formato_valor)
-            filename = build_pesquisa_filename(tema, interaction.user.id, formato_valor)
+            file_bytes, ext = generate_document(raw_output, tema, formato_valor)
+            filename = build_pesquisa_filename(tema, interaction.user.id, ext)
         except Exception:
             logging.exception("Error while generating document file")
             await interaction.followup.send(

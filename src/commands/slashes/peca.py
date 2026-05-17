@@ -13,16 +13,10 @@ from openai import APIError
 from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.documents import generate_document
+from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import get_provider_error_detail
 from ...helpers.send import send_document_result
 from ...prompts.peca import build_peca_messages
-
-PECA_FORMAT_CHOICES = [
-    discord.app_commands.Choice(name="PDF", value="pdf"),
-    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
-    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
-]
 
 SUPPORTED_INPUT_CONTENT_TYPES = (
     "application/pdf",
@@ -78,14 +72,13 @@ AREA_CHOICES = [
 ]
 
 
-def build_peca_filename(tipo: str | None, user_id: int, output_format: str) -> str:
+def build_peca_filename(tipo: str | None, user_id: int, ext: str) -> str:
     safe_tipo = re.sub(r"[^\w\s-]", "", tipo or "").strip().lower()
     safe_tipo = re.sub(r"[-\s]+", "_", safe_tipo) or "peca"
     if len(safe_tipo) > 60:
         safe_tipo = safe_tipo[:60]
     epoch = int(datetime.now().timestamp())
-    ext_map = {"pdf": ".pdf", "docx": ".docx", "odt": ".odt"}
-    return f"peca_{safe_tipo}_{user_id}_{epoch}{ext_map[output_format]}"
+    return f"peca_{safe_tipo}_{user_id}_{epoch}{ext}"
 
 
 def filter_choices(
@@ -135,7 +128,7 @@ def register_peca_command(
         instrucoes="Instruções adicionais para a geração da peça",
         format="Formato do arquivo de saída",
     )
-    @discord.app_commands.choices(format=PECA_FORMAT_CHOICES)
+    @discord.app_commands.choices(format=DOCUMENT_FORMAT_CHOICES)
     @discord.app_commands.autocomplete(tipo=tipo_autocomplete, area=area_autocomplete)
     async def peca_command(
         interaction: discord.Interaction,
@@ -342,8 +335,8 @@ def register_peca_command(
 
         try:
             title = tipo if tipo else "Peça Processual"
-            file_bytes, _ = generate_document(raw_output, title, formato_valor)
-            filename = build_peca_filename(tipo, interaction.user.id, formato_valor)
+            file_bytes, ext = generate_document(raw_output, title, formato_valor)
+            filename = build_peca_filename(tipo, interaction.user.id, ext)
         except RuntimeError as exc:
             await interaction.followup.send(str(exc))
             return

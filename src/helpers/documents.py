@@ -17,6 +17,13 @@ from .ui import (
     SUPPORTED_WORD_CONTENT_TYPES,
 )
 
+DOCUMENT_FORMAT_CHOICES = [
+    discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),
+    discord.app_commands.Choice(name="DOCX (Microsoft Word)", value="docx"),
+    discord.app_commands.Choice(name="ODT (LibreOffice)", value="odt"),
+    discord.app_commands.Choice(name="PDF", value="pdf"),
+]
+
 
 class DocumentProcessor(Protocol):
     extension: str
