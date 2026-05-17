@@ -4,7 +4,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFilter
 from pygments import highlight
 from pygments.formatters import ImageFormatter
-from pygments.lexers import TextLexer, guess_lexer_for_filename
+from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer_for_filename
 from pygments.util import ClassNotFound
 
 from .ui import CAPTURE_FILE_EXTENSIONS
@@ -34,9 +34,9 @@ _LANG_SIGNATURES: dict[str, str] = {
 }
 
 
-def render_code_image(code: str, *, max_lines: int = 200) -> bytes:
+def render_code_image(code: str, *, max_lines: int = 200, lang: str | None = None) -> bytes:
 
-    lexer = _detect_lexer(code)
+    lexer = _get_lexer(code, lang)
     code = _truncate_lines(code, max_lines)
 
     raw_png = highlight(
@@ -56,6 +56,15 @@ def render_code_image(code: str, *, max_lines: int = 200) -> bytes:
 
     code_img = Image.open(BytesIO(raw_png))
     return _post_process(code_img)
+
+
+def _get_lexer(code: str, lang: str | None = None):
+    if lang:
+        try:
+            return get_lexer_by_name(lang)
+        except ClassNotFound:
+            pass
+    return _detect_lexer(code)
 
 
 def _verify_lexer(code: str, lexer_name: str) -> bool:
@@ -84,8 +93,8 @@ def _detect_lexer(code: str):
     return TextLexer()
 
 
-def detect_language_name(code: str) -> str | None:
-    lexer = _detect_lexer(code)
+def detect_language_name(code: str, *, lang: str | None = None) -> str | None:
+    lexer = _get_lexer(code, lang)
     if isinstance(lexer, TextLexer):
         return None
     return lexer.name

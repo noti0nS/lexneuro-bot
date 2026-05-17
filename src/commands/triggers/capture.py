@@ -14,6 +14,8 @@ _CODE_FENCE_RE = re.compile(
     re.DOTALL,
 )
 
+_LANG_PREFIX_RE = re.compile(r"^lang=([a-zA-Z0-9#+\-]+)\s*:?\s*", re.DOTALL)
+
 
 @trigger("capture")
 async def handle_capture(
@@ -22,7 +24,14 @@ async def handle_capture(
     state: object,
     httpx_client: httpx.AsyncClient,
 ) -> None:
-    code = _extract_code(args) if args else ""
+    lang_override = None
+    text = args
+    lang_match = _LANG_PREFIX_RE.match(text)
+    if lang_match:
+        lang_override = lang_match.group(1)
+        text = text[lang_match.end():]
+
+    code = _extract_code(text) if text else ""
 
     if not code and message.attachments:
         first = message.attachments[0]
@@ -40,7 +49,7 @@ async def handle_capture(
 
     if not code:
         await message.reply(
-            "Envie um código após `lex!capture`. Ex: `lex!capture print('hello')`"
+            "Envie um código após `lex!capture`. Ex: `lex!capture print('hello')` ou `lex!capture lang=python:print('hello')`"
         )
         return
 
@@ -54,8 +63,8 @@ async def handle_capture(
     )
 
     try:
-        lang = detect_language_name(code)
-        png_bytes = render_code_image(code, max_lines=max_lines)
+        lang = lang_override or detect_language_name(code)
+        png_bytes = render_code_image(code, max_lines=max_lines, lang=lang_override)
     except Exception:
         logging.exception(
             "Trigger capture: render failed (user ID: %s)",
