@@ -8,7 +8,9 @@ from .pesquisa import (
     build_pesquisa_messages,
     build_refinement_message,
 )
+from .regex import build_regex_messages
 from .relatorio import build_relatorio_messages
+from .sql_cmd import build_sql_messages
 
 __all__ = [
     "ABNT_SYSTEM_PROMPT",
@@ -21,7 +23,9 @@ __all__ = [
     "build_peca_messages",
     "build_pesquisa_messages",
     "build_refinement_message",
+    "build_regex_messages",
     "build_relatorio_messages",
+    "build_sql_messages",
     "format_date_pt",
     "load_abnt_reference",
 ]

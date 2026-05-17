@@ -91,6 +91,23 @@ TRIBUNAL_CHOICES = [
     discord.app_commands.Choice(name="TJRJ — Tribunal de Justiça do RJ", value="tjRJ"),
 ]
 
+DIALETO_SQL_CHOICES = [
+    discord.app_commands.Choice(name="Genérico (padrão SQL)", value="generico"),
+    discord.app_commands.Choice(name="PostgreSQL", value="postgresql"),
+    discord.app_commands.Choice(name="MySQL / MariaDB", value="mysql"),
+    discord.app_commands.Choice(name="SQLite", value="sqlite"),
+    discord.app_commands.Choice(name="SQL Server", value="sqlserver"),
+    discord.app_commands.Choice(name="Oracle", value="oracle"),
+]
+
+ACAO_JSON_CHOICES = [
+    discord.app_commands.Choice(name="Validar", value="validar"),
+    discord.app_commands.Choice(name="Formatar (indentado)", value="formatar"),
+    discord.app_commands.Choice(name="Minificar", value="minificar"),
+    discord.app_commands.Choice(name="JSON → YAML", value="json2yaml"),
+    discord.app_commands.Choice(name="YAML → JSON", value="yaml2json"),
+]
+
 FORMATO_JURISPRUDENCIA_CHOICES = [
     discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),
     discord.app_commands.Choice(name="DOCX (arquivo Word)", value="docx"),
