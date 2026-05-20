@@ -7,13 +7,8 @@ import discord
 from discord.ext import commands
 from openai import APIError
 
-from ...config import (
-    OpenAIRequestConfig,
-    build_openai_chat_completion_kwargs,
-    get_openai_config,
-)
 from ...helpers.documents import generate_document
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import get_provider_error_detail, stream_chat_completion
 from ...helpers.ui import FormatSelectView
 from ...prompts.cronograma import build_cronograma_messages, format_date_pt
 
@@ -76,8 +71,8 @@ def compute_study_window(
 
 async def _generate_cronograma_content(
     msg_target: discord.abc.Messageable,
-    openai_client: Any,
-    openai_config: OpenAIRequestConfig,
+    config: dict[str, Any],
+    model_name: str,
     messages: list[dict[str, str]],
     user_id: int,
 ) -> str | None:
@@ -93,10 +88,10 @@ async def _generate_cronograma_content(
         logging.info(
             "Cronograma LLM stream starting (user ID: %s, model: %s)",
             user_id,
-            openai_config["model"],
+            model_name,
         )
-        async for chunk in await openai_client.chat.completions.create(
-            **build_openai_chat_completion_kwargs(openai_config, messages, stream=True)
+        async for chunk, _used_model in stream_chat_completion(
+            config, model_name, messages
         ):
             if finish_reason is not None:
                 break
@@ -309,13 +304,11 @@ class CronogramaFormatView(FormatSelectView):
         )
 
         state_config = self._state.config
-        openai_client, openai_config = get_openai_config(
-            state_config, self._state.curr_model
-        )
+
         logging.info(
             "Cronograma LLM config (user ID: %s, model: %s, format: %s)",
             interaction.user.id,
-            openai_config["model"],
+            self._state.curr_model,
             fmt,
         )
 
@@ -329,8 +322,8 @@ class CronogramaFormatView(FormatSelectView):
 
         content = await _generate_cronograma_content(
             self._msg_target,
-            openai_client,
-            openai_config,
+            state_config,
+            self._state.curr_model,
             messages,
             interaction.user.id,
         )

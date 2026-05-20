@@ -7,10 +7,9 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import execute_chat_completion, get_provider_error_detail
 from ...prompts.sql_cmd import build_sql_messages
 
 DIALETO_SQL_CHOICES = [
@@ -136,8 +135,6 @@ def register_sql_command(
             len(sql_text),
         )
 
-        openai_client, openai_config = get_openai_config(state.config, state.curr_model)
-
         raw_output = ""
         try:
             messages = build_sql_messages(
@@ -147,13 +144,13 @@ def register_sql_command(
             logging.info(
                 "SQL LLM request started (user ID: %s, model: %s)",
                 interaction.user.id,
-                openai_config["model"],
+                state.curr_model,
             )
             completion_task = asyncio.create_task(
-                openai_client.chat.completions.create(
-                    **build_openai_chat_completion_kwargs(
-                        openai_config, messages, stream=False
-                    )
+                execute_chat_completion(
+                    config=state.config,
+                    model_name=state.curr_model,
+                    messages=messages,
                 )
             )
             completion = await await_task_with_heartbeats(

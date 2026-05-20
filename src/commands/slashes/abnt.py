@@ -9,14 +9,13 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
 from ...helpers.documents import (
     attachment_is_supported_word_document,
     read_word_attachment,
 )
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import execute_chat_completion, get_provider_error_detail
 from ...prompts import build_abnt_messages
 
 
@@ -156,8 +155,6 @@ def register_abnt_command(
             ephemeral=is_dm,
         )
 
-        openai_client, openai_config = get_openai_config(state.config, state.curr_model)
-
         logging.info(
             "ABNT command received (user ID: %s, file: %s, chars: %s)",
             interaction.user.id,
@@ -178,29 +175,29 @@ def register_abnt_command(
             logging.info(
                 "ABNT LLM request started (user ID: %s, model: %s, file: %s, message_count: %s)",
                 interaction.user.id,
-                openai_config["model"],
+                state.curr_model,
                 document.filename,
                 len(messages),
             )
             completion_task = asyncio.create_task(
-                openai_client.chat.completions.create(
-                    **build_openai_chat_completion_kwargs(
-                        openai_config, messages, stream=False
-                    )
+                execute_chat_completion(
+                    config=state.config,
+                    model_name=state.curr_model,
+                    messages=messages,
                 )
             )
             completion = await await_task_with_heartbeats(
                 completion_task,
                 (
                     "ABNT LLM request still running "
-                    f"(user ID: {interaction.user.id}, model: {openai_config['model']}, file: {document.filename})"
+                    f"(user ID: {interaction.user.id}, model: {state.curr_model}, file: {document.filename})"
                 ),
             )
             elapsed = datetime.now().timestamp() - request_started_at
             logging.info(
                 "ABNT LLM request completed (user ID: %s, model: %s, file: %s, elapsed: %.2fs)",
                 interaction.user.id,
-                openai_config["model"],
+                state.curr_model,
                 document.filename,
                 elapsed,
             )
