@@ -10,11 +10,10 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import execute_chat_completion, get_provider_error_detail
 from ...helpers.send import send_document_result
 from ...prompts.peca import build_peca_messages
 
@@ -267,8 +266,6 @@ def register_peca_command(
             formato_valor,
         )
 
-        openai_client, openai_config = get_openai_config(state.config, curr_model)
-
         messages = build_peca_messages(
             enunciado=combined_text,
             tipo=tipo,
@@ -283,33 +280,30 @@ def register_peca_command(
             logging.info(
                 "Peça LLM request starting (user ID: %s, model: %s)",
                 interaction.user.id,
-                openai_config["model"],
+                curr_model,
             )
 
             completion_task = asyncio.create_task(
-                openai_client.chat.completions.create(
-                    **build_openai_chat_completion_kwargs(
-                        openai_config, messages, stream=False
-                    )
+                execute_chat_completion(
+                    config=state.config,
+                    model_name=curr_model,
+                    messages=messages,
+                    stream=False,
                 )
             )
             completion = await await_task_with_heartbeats(
                 completion_task,
-                (
-                    "Peça LLM request still running "
-                    f"(user ID: {interaction.user.id}, model: {openai_config['model']})"
-                ),
+                f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
             )
+            raw_output = get_completion_text(completion)
 
             elapsed = datetime.now().timestamp() - request_started_at
             logging.info(
                 "Peça LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                 interaction.user.id,
-                openai_config["model"],
+                curr_model,
                 elapsed,
             )
-
-            raw_output = get_completion_text(completion)
 
         except APIError as exc:
             logging.exception(

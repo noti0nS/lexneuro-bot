@@ -77,8 +77,12 @@ providers:
     base_url: http://vllm:8000/v1
 
 models:
-  # LiteLLM aliases — proxy decides providers per model_name
-  litellm/brain: # Groq primary, DeepSeek fallback
+  # Model aliases with fallback chains
+  brain:
+    - groq/llama-3.3-70b-versatile
+    - deepseek/deepseek-chat
+    - openai/gpt-4o-mini
+
   litellm/premium: # load-balanced: GPT-5 ↔ Claude-4
   litellm/vision-model:
 

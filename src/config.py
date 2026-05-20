@@ -69,6 +69,14 @@ def get_bot_token(config: dict[str, Any]) -> str:
     return bot_token
 
 
+def get_model_chain(config: dict[str, Any], model_name: str) -> list[str]:
+    models_dict = config.get("models", {})
+    entry = models_dict.get(model_name)
+    if isinstance(entry, list):
+        return entry
+    return [model_name]
+
+
 def get_openai_config(
     config: dict[str, Any], provider_slash_model: str
 ) -> tuple[AsyncOpenAI, OpenAIRequestConfig]:

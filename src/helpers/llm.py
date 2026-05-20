@@ -1,10 +1,87 @@
 import logging
+from collections.abc import AsyncIterable
 from typing import Any
 
 import discord
+import openai
 from openai import APIError, AsyncOpenAI
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-from ..config import OpenAIRequestConfig, build_openai_chat_completion_kwargs
+from ..config import (
+    OpenAIRequestConfig,
+    build_openai_chat_completion_kwargs,
+    get_model_chain,
+    get_openai_config,
+)
+
+
+async def execute_chat_completion(
+    config: dict[str, Any],
+    model_name: str,
+    messages: list[dict[str, Any]],
+    **kwargs: Any,
+) -> ChatCompletion:
+    """
+    Executes a chat completion request with automatic model chain resolution.
+    """
+    model_chain = get_model_chain(config, model_name)
+
+    for model_index, model_attempt in enumerate(model_chain):
+        try:
+            openai_client, openai_config = get_openai_config(config, model_attempt)
+            return await openai_client.chat.completions.create(
+                **build_openai_chat_completion_kwargs(
+                    openai_config, messages, stream=False, **kwargs
+                )
+            )
+        except (
+            openai.APIStatusError,
+            openai.RateLimitError,
+            openai.APIConnectionError,
+        ) as e:
+            if model_index == len(model_chain) - 1:
+                raise
+            logging.warning(
+                "Model %s failed, falling back... Error: %s", model_attempt, e
+            )
+            continue
+    raise RuntimeError("Model chain exhausted without result")
+
+
+async def stream_chat_completion(
+    config: dict[str, Any],
+    model_name: str,
+    messages: list[dict[str, Any]],
+    **kwargs: Any,
+) -> AsyncIterable[tuple[ChatCompletionChunk, str]]:
+    """
+    Streams a chat completion request with automatic model chain resolution.
+    Yields tuples of (chunk, model_name_used).
+    """
+    model_chain = get_model_chain(config, model_name)
+
+    for model_index, model_attempt in enumerate(model_chain):
+        try:
+            openai_client, openai_config = get_openai_config(config, model_attempt)
+            stream = await openai_client.chat.completions.create(
+                **build_openai_chat_completion_kwargs(
+                    openai_config, messages, stream=True, **kwargs
+                )
+            )
+            async for chunk in stream:
+                yield chunk, model_attempt
+            return
+        except (
+            openai.APIStatusError,
+            openai.RateLimitError,
+            openai.APIConnectionError,
+        ) as e:
+            if model_index == len(model_chain) - 1:
+                raise
+            logging.warning(
+                "Model %s failed, falling back... Error: %s", model_attempt, e
+            )
+            continue
 
 
 async def stream_completion_to_channel(

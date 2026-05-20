@@ -10,12 +10,11 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...config import build_openai_chat_completion_kwargs, get_openai_config
 from ...helpers.ai_tools import ContentFilterError, run_research_loop
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import execute_chat_completion, get_provider_error_detail
 from ...helpers.send import send_document_result
 from ...prompts.relatorio import build_relatorio_messages
 
@@ -243,8 +242,6 @@ def register_relatorio_command(
         model = relatorio_config.get("model")
         curr_model = model if model else state.curr_model
 
-        openai_client, openai_config = get_openai_config(state.config, curr_model)
-
         raw_output = ""
         request_started_at = datetime.now().timestamp()
         pesquisar_enabled = pesquisar == "true"
@@ -258,8 +255,8 @@ def register_relatorio_command(
                 max_pages = relatorio_config.get("max_page_fetches", 5)
 
                 raw_output = await run_research_loop(
-                    openai_client=openai_client,
-                    openai_config=openai_config,
+                    config=state.config,
+                    model_name=curr_model,
                     messages=messages,
                     max_iterations=max_iterations,
                     search_results_per_topic=search_results_count,
@@ -267,23 +264,22 @@ def register_relatorio_command(
                     user_id=interaction.user.id,
                 )
             else:
+                logging.info(
+                    "Relatorio request started (user ID: %s, model: %s)",
+                    interaction.user.id,
+                    curr_model,
+                )
                 completion_task = asyncio.create_task(
-                    openai_client.chat.completions.create(
-                        **build_openai_chat_completion_kwargs(
-                            openai_config,
-                            messages,
-                            stream=False,
-                            tool_choice="none",
-                        )
+                    execute_chat_completion(
+                        config=state.config,
+                        model_name=curr_model,
+                        messages=messages,
+                        tool_choice="none",
                     )
                 )
                 completion = await await_task_with_heartbeats(
                     completion_task,
-                    (
-                        "Relatorio LLM request still running "
-                        f"(user ID: {interaction.user.id}, "
-                        f"model: {openai_config['model']})"
-                    ),
+                    f"Relatorio LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
                 )
                 raw_output = get_completion_text(completion)
 
@@ -291,7 +287,7 @@ def register_relatorio_command(
             logging.info(
                 "Relatorio LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                 interaction.user.id,
-                openai_config["model"],
+                curr_model,
                 elapsed,
             )
 

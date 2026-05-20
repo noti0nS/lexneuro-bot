@@ -25,9 +25,10 @@ from .commands.slashes.sql_cmd import register_sql_command
 from .commands.slashes.status import register_status_commands
 from .commands.triggers import get_handler
 from .config import (
-    build_openai_chat_completion_kwargs,
     get_config,
-    get_openai_config,
+)
+from .helpers.llm import (
+    stream_chat_completion,
 )
 from .helpers.content import sanitize_discord_markdown
 from .helpers.status_scheduler import start_status_scheduler
@@ -240,7 +241,6 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         if channel_lock.locked():
             return
 
-        openai_client, openai_config = get_openai_config(state.config, state.curr_model)
         accept_images = any(
             tag in state.curr_model.lower() for tag in VISION_MODEL_TAGS
         )
@@ -458,15 +458,6 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         response_msgs = []
         response_contents = []
 
-        openai_kwargs = dict(
-            model=openai_config["model"],
-            messages=messages[::-1],
-            stream=True,
-            extra_headers=openai_config["extra_headers"],
-            extra_query=openai_config["extra_query"],
-            extra_body=openai_config["extra_body"],
-        )
-
         use_plain_responses = state.config.get("use_plain_responses", False)
         response_embed: discord.Embed | None = None
         if use_plain_responses:
@@ -497,7 +488,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                 logging.info(
                     "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
                     new_msg.author.id,
-                    openai_kwargs["model"],
+                    state.curr_model,
                     len(messages),
                     use_plain_responses,
                 )
@@ -516,10 +507,10 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     )
 
                 try:
-                    async for chunk in await openai_client.chat.completions.create(
-                        **build_openai_chat_completion_kwargs(
-                            openai_config, messages[::-1], stream=True
-                        )
+                    async for chunk, model_used in stream_chat_completion(
+                        config=state.config,
+                        model_name=state.curr_model,
+                        messages=messages[::-1],
                     ):
                         if finish_reason is not None:
                             break
@@ -554,7 +545,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                             logging.info(
                                 "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
                                 new_msg.author.id,
-                                openai_kwargs["model"],
+                                model_used,
                                 datetime.now().timestamp() - request_started_at,
                             )
                             first_chunk_logged = True
@@ -575,17 +566,19 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                             )
                             response_embed.color = EMBED_COLOR_COMPLETE
                             await reply_helper(embed=response_embed)
+
+                    logging.info(
+                        "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                        new_msg.author.id,
+                        state.curr_model,
+                        finish_reason,
+                        len(response_contents),
+                        datetime.now().timestamp() - request_started_at,
+                    )
+
                 finally:
                     if typing_active:
                         await typing_ctx.__aexit__(None, None, None)
-                logging.info(
-                    "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
-                    new_msg.author.id,
-                    openai_kwargs["model"],
-                    finish_reason,
-                    len(response_contents),
-                    datetime.now().timestamp() - request_started_at,
-                )
 
             except discord.DiscordServerError:
                 await new_msg.channel.send(
@@ -594,7 +587,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                 logging.exception(
                     "Discord 503 error while generating response (user ID: %s, model: %s)",
                     new_msg.author.id,
-                    openai_kwargs["model"],
+                    state.curr_model,
                 )
 
             except discord.HTTPException as e:
@@ -613,7 +606,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     logging.exception(
                         "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
                         new_msg.author.id,
-                        openai_kwargs["model"],
+                        state.curr_model,
                         rl_headers,
                     )
                 else:
@@ -621,14 +614,14 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                         "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
                         e.status,
                         new_msg.author.id,
-                        openai_kwargs["model"],
+                        state.curr_model,
                     )
 
             except Exception:
                 logging.exception(
                     "Error while generating response (user ID: %s, model: %s)",
                     new_msg.author.id,
-                    openai_kwargs["model"],
+                    state.curr_model,
                 )
 
         for response_msg in response_msgs:

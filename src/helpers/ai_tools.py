@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
-from ..config import OpenAIRequestConfig, build_openai_chat_completion_kwargs
+from openai.types.chat import ChatCompletionMessageToolCall
+from .llm import execute_chat_completion
 from .async_utils import await_task_with_heartbeats
 from .content import get_completion_text
 from .search import fetch_page_content, search_topics
@@ -92,8 +93,8 @@ def format_search_results(results: list[dict[str, Any]]) -> str:
 
 
 async def run_research_loop(
-    openai_client: Any,
-    openai_config: OpenAIRequestConfig,
+    config: dict[str, Any],
+    model_name: str,
     messages: list[dict[str, Any]],
     *,
     max_iterations: int,
@@ -112,34 +113,27 @@ async def run_research_loop(
         tools = ALL_RESEARCH_TOOLS
 
     pages_fetched = 0
-
     for iteration in range(max_iterations):
         logging.info(
             "Research LLM iteration %s/%s (user ID: %s, model: %s)",
             iteration + 1,
             max_iterations,
             user_id,
-            openai_config["model"],
+            model_name,
         )
 
         completion_task = asyncio.create_task(
-            openai_client.chat.completions.create(
-                **build_openai_chat_completion_kwargs(
-                    openai_config,
-                    messages,
-                    stream=False,
-                    tools=tools,
-                    reasoning_effort=reasoning_effort,
-                )
+            execute_chat_completion(
+                config=config,
+                model_name=model_name,
+                messages=messages,
+                tools=tools,
+                reasoning_effort=reasoning_effort,
             )
         )
         completion = await await_task_with_heartbeats(
             completion_task,
-            (
-                "Research LLM request still running "
-                f"(user ID: {user_id}, "
-                f"model: {openai_config['model']})"
-            ),
+            f"Research LLM request still running (user ID: {user_id}, model: {model_name})",
         )
 
         if not completion.choices:
@@ -153,7 +147,9 @@ async def run_research_loop(
             and choice.message
             and choice.message.tool_calls
         ):
-            tool_calls = choice.message.tool_calls
+            tool_calls = cast(
+                list[ChatCompletionMessageToolCall], choice.message.tool_calls
+            )
 
             tool_summary = [
                 f"{tc.function.name}({tc.function.arguments})" for tc in tool_calls
@@ -297,20 +293,17 @@ async def run_research_loop(
         if raw_output:
             return raw_output
 
-    # Loop exhausted — force final generation
     logging.warning(
         "Research tool loop exhausted, forcing final generation (user ID: %s)",
         user_id,
     )
     force_task = asyncio.create_task(
-        openai_client.chat.completions.create(
-            **build_openai_chat_completion_kwargs(
-                openai_config,
-                messages,
-                stream=False,
-                tool_choice="none",
-                reasoning_effort=reasoning_effort,
-            )
+        execute_chat_completion(
+            config=config,
+            model_name=model_name,
+            messages=messages,
+            tool_choice="none",
+            reasoning_effort=reasoning_effort,
         )
     )
     force_completion = await await_task_with_heartbeats(

@@ -7,7 +7,6 @@ import discord
 from discord.ext import commands
 from openai import APIError
 
-from ...config import get_openai_config
 from ...helpers.ai_tools import ContentFilterError, run_research_loop
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import get_provider_error_detail
@@ -114,12 +113,10 @@ def register_jurisprudencia_command(
         jur_model = jur_config.get("model")
         curr_model = jur_model if jur_model else state.curr_model
 
-        openai_client, openai_config = get_openai_config(state.config, curr_model)
-
         try:
             raw_output = await run_research_loop(
-                openai_client=openai_client,
-                openai_config=openai_config,
+                config=state.config,
+                model_name=curr_model,
                 messages=messages,
                 max_iterations=max_iterations,
                 search_results_per_topic=search_results_count,
@@ -130,7 +127,7 @@ def register_jurisprudencia_command(
             logging.info(
                 "Jurisprudencia LLM request completed (user ID: %s, model: %s)",
                 interaction.user.id,
-                openai_config["model"],
+                curr_model,
             )
 
         except ContentFilterError:
