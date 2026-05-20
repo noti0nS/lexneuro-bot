@@ -306,17 +306,21 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                         ]
                     )
 
-                    curr_node.images = [
-                        dict(
-                            type="image_url",
-                            image_url=dict(
-                                url=f"data:{content_type};base64,{b64encode(resp.content).decode('utf-8')}"
-                            ),
-                        )
-                        for att, resp in zip(good_attachments, attachment_responses)
-                        if (content_type := att.content_type)
-                        and content_type.startswith("image")
-                    ]
+                    curr_node.images = (
+                        [
+                            dict(
+                                type="image_url",
+                                image_url=dict(
+                                    url=f"data:{content_type};base64,{b64encode(resp.content).decode('utf-8')}"
+                                ),
+                            )
+                            for att, resp in zip(good_attachments, attachment_responses)
+                            if (content_type := att.content_type)
+                            and content_type.startswith("image")
+                        ]
+                        if curr_node.role == "user"
+                        else []
+                    )
 
                     if curr_node.role == "user" and (
                         curr_node.text or curr_node.images
