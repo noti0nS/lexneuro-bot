@@ -251,6 +251,9 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         messages = []
         user_warnings = set()
         curr_msg = new_msg
+        direct_reply_id = (
+            new_msg.reference.message_id if new_msg.reference else None
+        )
 
         while curr_msg is not None and len(messages) < max_messages:
             curr_node = msg_nodes.setdefault(curr_msg.id, MsgNode())
@@ -261,18 +264,26 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                         bot_user.mention
                     ).lstrip()
 
-                    good_attachments = [
-                        att
-                        for att in curr_msg.attachments
-                        if (content_type := att.content_type)
-                        and any(
-                            content_type.startswith(kind) for kind in ("text", "image")
-                        )
-                    ]
+                    if (
+                        curr_msg.id == new_msg.id
+                        or curr_msg.id == direct_reply_id
+                    ):
+                        good_attachments = [
+                            att
+                            for att in curr_msg.attachments
+                            if (content_type := att.content_type)
+                            and any(
+                                content_type.startswith(kind)
+                                for kind in ("text", "image")
+                            )
+                        ]
 
-                    attachment_responses = await asyncio.gather(
-                        *[httpx_client.get(att.url) for att in good_attachments]
-                    )
+                        attachment_responses = await asyncio.gather(
+                            *[httpx_client.get(att.url) for att in good_attachments]
+                        )
+                    else:
+                        good_attachments = []
+                        attachment_responses = []
 
                     curr_node.role = (
                         "assistant" if curr_msg.author == bot_user else "user"
@@ -327,9 +338,13 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     ):
                         curr_node.text = f"<@{curr_msg.author.id}>: {curr_node.text}"
 
-                    curr_node.has_bad_attachments = len(curr_msg.attachments) > len(
-                        good_attachments
-                    )
+                    if (
+                        curr_msg.id == new_msg.id
+                        or curr_msg.id == direct_reply_id
+                    ):
+                        curr_node.has_bad_attachments = (
+                            len(curr_msg.attachments) > len(good_attachments)
+                        )
 
                     try:
                         is_dm = curr_msg.channel.type == discord.ChannelType.private
