@@ -66,9 +66,7 @@ async def handle_capture(
     )
 
     try:
-        lang = lang_override or detect_language_name(
-            code, filename=att_filename
-        )
+        lang = lang_override or detect_language_name(code, filename=att_filename)
         png_bytes = render_code_image(
             code, max_lines=max_lines, lang=lang_override, filename=att_filename
         )

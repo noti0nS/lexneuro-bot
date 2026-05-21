@@ -42,9 +42,7 @@ def render_code_image(
     return _post_process(code_img)
 
 
-def _get_lexer(
-    code: str, lang: str | None = None, *, filename: str | None = None
-):
+def _get_lexer(code: str, lang: str | None = None, *, filename: str | None = None):
     if lang:
         try:
             return get_lexer_by_name(lang)
