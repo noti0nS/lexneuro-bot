@@ -46,6 +46,9 @@ async def handle_capture(
             await message.reply("Não consegui baixar o anexo.")
             return
         code = resp.text.strip()
+        att_filename = first.filename
+    else:
+        att_filename = None
 
     if not code:
         await message.reply(
@@ -63,8 +66,12 @@ async def handle_capture(
     )
 
     try:
-        lang = lang_override or detect_language_name(code)
-        png_bytes = render_code_image(code, max_lines=max_lines, lang=lang_override)
+        lang = lang_override or detect_language_name(
+            code, filename=att_filename
+        )
+        png_bytes = render_code_image(
+            code, max_lines=max_lines, lang=lang_override, filename=att_filename
+        )
     except Exception:
         logging.exception(
             "Trigger capture: render failed (user ID: %s)",

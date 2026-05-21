@@ -1,44 +1,26 @@
-import re
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFilter
 from pygments import highlight
 from pygments.formatters import ImageFormatter
-from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer_for_filename
+from pygments.lexers import (
+    TextLexer,
+    get_lexer_by_name,
+    get_lexer_for_filename,
+    guess_lexer,
+)
 from pygments.util import ClassNotFound
-
-from .ui import CAPTURE_FILE_EXTENSIONS
-
-_LANG_SIGNATURES: dict[str, str] = {
-    "python": r"\b(def|class|import|from|print|elif|yield|self)\b",
-    "c#": r"\b(var|using|namespace|=>|\.Select\(|\.Where\(|\.ToList\()",
-    "javascript": r"\b(function|const|let|console|=>|new )",
-    "typescript": r"\b(interface|: string|: number|: boolean|readonly)\b",
-    "java": r"\b(public class|System\.out|String\[\]|ArrayList)\b",
-    "go": r"\b(func|package|fmt\.|:=|goroutine|chan )",
-    "rust": r"\b(fn |let mut|println!|impl |struct |enum )",
-    "c++": r"\b(#include|std::|cout|cin|template)\b",
-    "c": r"\b(#include|printf\(|malloc|typedef|struct )",
-    "ruby": r"\b(def|end|puts|attr_accessor|\.each)\b",
-    "php": r"\b(<\?php|echo |\$\w+|function )",
-    "swift": r"\b(var |let |func |guard |protocol)\b",
-    "kotlin": r"\b(fun |val |var |when |data class)\b",
-    "scala": r"\b(def |val |var |object |case class)\b",
-    "lua": r"\b(function|local|nil|\.\.)\b",
-    "bash": r"\b(echo|export|#!/bin|function |if \[)",
-    "sql": r"\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN)\b",
-    "yaml": r"^\w+:\s",
-    "json": r"^[\[\{]",
-    "html": r"<(!DOCTYPE|html|div|head|body|script|style)",
-    "css": r"\{[\s\S]*:[\s\S]*;",
-}
 
 
 def render_code_image(
-    code: str, *, max_lines: int = 200, lang: str | None = None
+    code: str,
+    *,
+    max_lines: int = 200,
+    lang: str | None = None,
+    filename: str | None = None,
 ) -> bytes:
 
-    lexer = _get_lexer(code, lang)
+    lexer = _get_lexer(code, lang, filename=filename)
     code = _truncate_lines(code, max_lines)
 
     raw_png = highlight(
@@ -60,43 +42,38 @@ def render_code_image(
     return _post_process(code_img)
 
 
-def _get_lexer(code: str, lang: str | None = None):
+def _get_lexer(
+    code: str, lang: str | None = None, *, filename: str | None = None
+):
     if lang:
         try:
             return get_lexer_by_name(lang)
         except ClassNotFound:
             pass
-    return _detect_lexer(code)
+    return _detect_lexer(code, filename=filename)
 
 
-def _verify_lexer(code: str, lexer_name: str) -> bool:
-    name_key = lexer_name.lower().rstrip("0123456789. ")
-    pattern = _LANG_SIGNATURES.get(name_key)
-    if pattern is None:
-        return True
-    return bool(re.search(pattern, code))
-
-
-def _detect_lexer(code: str):
+def _detect_lexer(code: str, *, filename: str | None = None):
     sample = code[:2000]
+    if not sample.strip():
+        return TextLexer()
 
-    for ext in CAPTURE_FILE_EXTENSIONS:
+    if filename:
         try:
-            lexer = guess_lexer_for_filename(f"code.{ext}", sample)
-            name = lexer.name.lower()
-            if name in ("text only", "scdoc", "markdown"):
-                continue
-            if not _verify_lexer(sample, name):
-                continue
-            return lexer
+            return get_lexer_for_filename(filename, sample, stripnl=False)
         except ClassNotFound:
-            continue
+            pass
 
-    return TextLexer()
+    try:
+        return guess_lexer(sample)
+    except ClassNotFound:
+        return TextLexer()
 
 
-def detect_language_name(code: str, *, lang: str | None = None) -> str | None:
-    lexer = _get_lexer(code, lang)
+def detect_language_name(
+    code: str, *, lang: str | None = None, filename: str | None = None
+) -> str | None:
+    lexer = _get_lexer(code, lang, filename=filename)
     if isinstance(lexer, TextLexer):
         return None
     return lexer.name
