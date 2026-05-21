@@ -22,6 +22,7 @@ from ...prompts.pesquisa import (
     EXTENSAO_LABELS,
     build_pesquisa_messages,
     build_refinement_message,
+    detect_domain,
 )
 
 EXTENSAO_CHOICES = [
@@ -124,6 +125,8 @@ def register_pesquisa_command(
             paginas=paginas,
         )
 
+        dominio = detect_domain(tema)
+
         pesquisa_config = state.config.get("pesquisa", {})
         max_iterations = pesquisa_config.get("max_tool_iterations", 15)
         search_results_count = pesquisa_config.get("search_results_per_topic", 8)
@@ -142,7 +145,9 @@ def register_pesquisa_command(
             # Phase 1: Refinement (self-Q&A) — optional pre-generation step
             if refinement_enabled:
                 saved_len = len(messages)
-                messages.append({"role": "user", "content": build_refinement_message()})
+                messages.append(
+                    {"role": "user", "content": build_refinement_message(dominio)}
+                )
 
                 logging.info(
                     "Pesquisa refinement started (user ID: %s, model: %s)",

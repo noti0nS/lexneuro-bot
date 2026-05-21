@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from .abnt import load_abnt_reference
@@ -8,40 +9,158 @@ EXTENSAO_LABELS: dict[str, str] = {
     "completo": "Dossiê Completo (5+ págs. / 2.500+ palavras)",
 }
 
+_JURIDICO_KEYWORDS: set[str] = {
+    "ação judicial",
+    "acórdão",
+    "advocacia",
+    "alvará",
+    "apelação",
+    "artigo",
+    "cível",
+    "civil",
+    "clt",
+    "código civil",
+    "código de processo",
+    "código penal",
+    "condenação",
+    "constituição",
+    "constitucional",
+    "cpc",
+    "cpp",
+    "crime",
+    "criminal",
+    "danos morais",
+    "decisão judicial",
+    "defensoria",
+    "direito",
+    "doutrina",
+    "embargos",
+    "estatuto",
+    "fgts",
+    "habeas corpus",
+    "indenização",
+    "inss",
+    "juiz",
+    "jurídico",
+    "jurisprudência",
+    "justiça",
+    "lei",
+    "legislação",
+    "liminar",
+    "mandado",
+    "ministério público",
+    "penal",
+    "petição",
+    "previdência",
+    "previdenciário",
+    "processo judicial",
+    "procuradoria",
+    "recorrente",
+    "recurso",
+    "réu",
+    "sentença",
+    "stf",
+    "stj",
+    "sucessão",
+    "trabalhista",
+    "tribunal",
+    "tributário",
+    "tutela",
+}
+
+_TECNOLOGIA_KEYWORDS: set[str] = {
+    "algoritmo",
+    "api",
+    "app",
+    "aws",
+    "azure",
+    "backend",
+    "banco de dados",
+    "big data",
+    "blockchain",
+    "ciência de dados",
+    "cloud",
+    "código fonte",
+    "compilador",
+    "computação",
+    "criptografia",
+    "database",
+    "desenvolvimento web",
+    "devops",
+    "docker",
+    "engenharia de software",
+    "framework",
+    "frontend",
+    "hardware",
+    "inteligência artificial",
+    "java",
+    "javascript",
+    "kubernetes",
+    "linux",
+    "machine learning",
+    "machine-learning",
+    "programação",
+    "python",
+    "rede neural",
+    "rust",
+    "segurança da informação",
+    "software",
+    "sistema operacional",
+    "sql",
+    "typescript",
+    "web",
+}
+
+_DOMAIN_INSTRUCTIONS: dict[str, str] = {
+    "juridico": """\
+- **Domínio Jurídico**: Produza um artigo acadêmico com doutrina, \
+jurisprudência e fundamentação legal precisa. Nunca invente jurisprudência \
+ou fontes inexistentes. Use **Art. X da Lei Y** para destacar dispositivos \
+legais. Se houver divergência doutrinária ou jurisprudencial, exponha ambas \
+as correntes. Busque fontes oficiais: tribunais, legislação, artigos \
+doutrinários.""",
+    "tecnologia": """\
+- **Domínio Tecnológico**: Produza documentação técnica ou artigo acadêmico \
+com explicações conceituais, exemplos de código quando relevante, e \
+referências a frameworks, linguagens e boas práticas. Use ```linguagem \
+para blocos de código. Priorize fontes como documentação oficial, artigos \
+técnicos e papers acadêmicos.""",
+    "geral": """\
+- **Domínio Geral/Acadêmico**: Produza um artigo ou texto acadêmico-científico \
+sobre o tema. Estruture com introdução, desenvolvimento e conclusão. \
+Fundamente-se em fontes acadêmicas, dados e referências bibliográficas do \
+campo de conhecimento pertinente. Adapte a terminologia ao domínio do tema. \
+Busque fontes acadêmicas confiáveis: artigos científicos, livros, \
+periódicos e publicações especializadas.""",
+}
+
 PESQUISA_SYSTEM_PROMPT = """\
-Você é o LexNeuro, um assistente de pesquisa e documentação técnica.
+Você é o LexNeuro, um assistente de pesquisa e documentação acadêmica.
 Sua missão é inferir a intenção do usuário a partir de instruções \
-fragmentadas e produzir um documento final perfeitamente estruturado \
-em formato ABNT, sem exigir explicações adicionais.
+fragmentadas e produzir um documento final perfeitamente estruturado, \
+sem exigir explicações adicionais.
 
 ### PARÂMETROS DA SOLICITAÇÃO:
 - Tema Central: {tema}
+- Domínio Classificado: **{dominio}**
+{domain_instructions}
 - Extensão Desejada: {extensao_label} (Adeque o nível de detalhe para \
 atingir essa proporção aproximada de texto).
 - Páginas Solicitadas: {paginas} — ALVO EXATO. O documento final DEVE \
 ter {paginas} página(s) de conteúdo substancial — nem menos, nem mais. \
-Se perceber que o texto está curto, aprofunde-se em mais jurisprudência, \
-doutrina ou subtópicos. Se perceber que está longo demais, corte os \
-trechos menos essenciais e vá direto ao ponto. Este é o parâmetro mais \
-importante — a extensão é secundária, a contagem exata de páginas é \
+Se perceber que o texto está curto, aprofunde-se em mais fontes, \
+subtópicos ou análises complementares. Se perceber que está longo demais, \
+corte os trechos menos essenciais e vá direto ao ponto. Este é o parâmetro \
+mais importante — a extensão é secundária, a contagem exata de páginas é \
 primária.
-
-### DOMÍNIOS:
-- Se o tema for jurídico: produza um artigo acadêmico com doutrina, \
-jurisprudência e fundamentação legal precisa. Nunca invente jurisprudência \
-ou fontes inexistentes.
-- Se o tema for de programação/tecnologia: produza documentação técnica \
-com explicações conceituais e exemplos de código quando relevante.
-- Em ambos os casos: siga rigorosamente a formatação ABNT.
 
 ### REGRAS DE EXECUÇÃO:
 1. COMPREENSÃO DE FRAGMENTOS: Infira a intenção e escreva imediatamente \
 o documento estruturado com base no tema.
 2. MARKDOWN DISCORD: Use `#` para grandes divisões e `**` para destacar \
-artigos de lei (ex: **Art. 319 do CPC**). Use `>` para simular recuos de \
-citação direta longa (ABNT).
-3. RIGOR: Indique competência correta e fundamentação real. Se houver \
-divergência, exponha ambas as correntes.
+termos ou conceitos importantes.
+3. RIGOR: Fundamente cada afirmação em fontes reais e verificáveis. \
+Se houver divergência na literatura, exponha todas as perspectivas.
 4. TOM: Direto, culto, resolutivo. Comece IMEDIATAMENTE com o conteúdo \
 do documento — NUNCA diga "Aqui está", "Segue o documento", nem qualquer \
 introdução ou comentário meta-textual. Seu output DEVE começar com o \
@@ -50,22 +169,20 @@ título ou primeiro parágrafo do documento.
 Planeje a estrutura ANTES de redigir: seção por seção, quantos parágrafos \
 cada uma terá. Após cada seção, avalie se o volume acumulado está no \
 caminho para {paginas} página(s) exatas. Se estiver ficando curto, \
-EXPANDA: adicione jurisprudência, contra-argumentos, notas doutrinárias. \
-Se estiver ficando longo, ENXUGUE: corte repetições, resuma parágrafos \
-prolixos, remova tangentes. Entregar {paginas} página(s) — nem menos, \
-nem mais — é obrigatório. Um documento com contagem errada de páginas \
-é uma falha grave.
+EXPANDA: adicione fontes complementares, contra-argumentos, notas \
+explicativas. Se estiver ficando longo, ENXUGUE: corte repetições, \
+resuma parágrafos prolixos, remova tangentes. Entregar {paginas} \
+página(s) — nem menos, nem mais — é obrigatório. Um documento com \
+contagem errada de páginas é uma falha grave.
 
 ### FERRAMENTAS DE PESQUISA:
-Você tem acesso a `web_search` (busca DuckDuckGo por artigos, \
-jurisprudência, doutrina) e `fetch_page` (conteúdo integral de URLs). \
-Use múltiplas buscas com diferentes ângulos. Reúna fontes antes de \
-redigir. Priorize fontes confiáveis: doutrina, jurisprudência oficial, \
-artigos acadêmicos.
+Você tem acesso a `web_search` (busca DuckDuckGo por artigos e fontes) \
+e `fetch_page` (conteúdo integral de URLs). Use múltiplas buscas com \
+diferentes ângulos. Reúna fontes antes de redigir. Priorize fontes \
+confiáveis e acadêmicas.
 
 ### FORMATAÇÃO:
-- Use notas de rodapé numeradas (¹, ²) com citações ABNT.
-- Inclua "REFERÊNCIAS" ao final em ABNT NBR 6023.
+- Inclua "REFERÊNCIAS" ao final com citações no formato ABNT NBR 6023.
 - Produza APENAS o conteúdo do documento. Qualquer linha que não pertença \
 ao documento (introduções como "Aqui está", saudações, explicações sobre \
 o que foi gerado) está PROIBIDA.
@@ -73,9 +190,9 @@ o que foi gerado) está PROIBIDA.
 
 REFINEMENT_PROMPT = """\
 Antes de iniciar a pesquisa, reflita sobre o tema. Formule de 3 a 5 \
-perguntas esclarecedoras que um especialista faria e responda cada uma \
-com seu melhor conhecimento jurídico. Seja conciso. Não faça buscas — \
-apenas raciocine.
+perguntas esclarecedoras que um especialista no domínio **{dominio_label}** \
+faria e responda cada uma com seu melhor conhecimento sobre o assunto. \
+Seja conciso. Não faça buscas — apenas raciocine.
 
 Formato:
 ### ANÁLISE PRELIMINAR
@@ -90,6 +207,27 @@ Formato:
 Ao final, prossiga com a pesquisa web e a redação do documento.
 """
 
+_DOMINIO_LABELS: dict[str, str] = {
+    "juridico": "jurídico",
+    "tecnologia": "tecnologia/programação",
+    "geral": "acadêmico-científico",
+}
+
+
+def detect_domain(tema: str) -> str:
+    """Detect the domain of a research topic via keyword matching."""
+    tema_lower = tema.lower()
+
+    for kw in _JURIDICO_KEYWORDS:
+        if re.search(rf"\b{re.escape(kw)}\b", tema_lower):
+            return "juridico"
+
+    for kw in _TECNOLOGIA_KEYWORDS:
+        if re.search(rf"\b{re.escape(kw)}\b", tema_lower):
+            return "tecnologia"
+
+    return "geral"
+
 
 def build_pesquisa_messages(
     *,
@@ -98,17 +236,22 @@ def build_pesquisa_messages(
     paginas: int = 3,
 ) -> list[dict[str, Any]]:
     extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
+    dominio = detect_domain(tema)
+    domain_instructions = _DOMAIN_INSTRUCTIONS[dominio]
 
     system_prompt = PESQUISA_SYSTEM_PROMPT.format(
         tema=tema,
+        dominio=dominio,
+        domain_instructions=domain_instructions,
         extensao_label=extensao_label,
         paginas=paginas,
     )
 
-    abnt_reference = load_abnt_reference()
-    system_prompt += (
-        f"\n\n## DIRETRIZES OBRIGATÓRIAS DE FORMATAÇÃO ABNT\n\n{abnt_reference}"
-    )
+    if dominio == "juridico":
+        abnt_reference = load_abnt_reference()
+        system_prompt += (
+            f"\n\n## DIRETRIZES OBRIGATÓRIAS DE FORMATAÇÃO ABNT\n\n{abnt_reference}"
+        )
 
     return [
         dict(role="system", content=system_prompt),
@@ -116,5 +259,6 @@ def build_pesquisa_messages(
     ]
 
 
-def build_refinement_message() -> str:
-    return REFINEMENT_PROMPT
+def build_refinement_message(dominio: str = "geral") -> str:
+    dominio_label = _DOMINIO_LABELS.get(dominio, "acadêmico-científico")
+    return REFINEMENT_PROMPT.format(dominio_label=dominio_label)

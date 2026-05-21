@@ -5,6 +5,7 @@ from src.prompts.pesquisa import (
     REFINEMENT_PROMPT,
     build_pesquisa_messages,
     build_refinement_message,
+    detect_domain,
 )
 
 
@@ -63,12 +64,22 @@ def test_build_messages_no_modo_pensamento_param() -> None:
     assert "modo_pensamento" not in sig.parameters
 
 
-def test_build_messages_includes_abnt_reference() -> None:
+def test_build_messages_includes_abnt_reference_for_legal() -> None:
     from src.prompts.abnt import load_abnt_reference
 
-    messages = build_pesquisa_messages(tema="test")
+    messages = build_pesquisa_messages(tema="artigo 5 constituição federal")
     abnt_ref = load_abnt_reference()
     assert abnt_ref.splitlines()[0] in messages[0]["content"]
+
+
+def test_build_messages_no_abnt_reference_for_non_legal() -> None:
+    from src.prompts.abnt import load_abnt_reference
+
+    messages = build_pesquisa_messages(
+        tema="O Papel dos Sistemas de Informação no Apoio ao Processo Decisório"
+    )
+    abnt_ref = load_abnt_reference()
+    assert abnt_ref.splitlines()[0] not in messages[0]["content"]
 
 
 def test_build_messages_returns_list_of_dicts() -> None:
@@ -88,8 +99,24 @@ def test_refinement_prompt_built() -> None:
     assert "3 a 5" in msg
 
 
-def test_refinement_prompt_is_constant() -> None:
-    assert build_refinement_message() == REFINEMENT_PROMPT
+def test_refinement_prompt_with_juridico_domain() -> None:
+    msg = build_refinement_message("juridico")
+    assert "ANÁLISE PRELIMINAR" in msg
+    assert "jurídico" in msg
+
+
+def test_refinement_prompt_with_tecnologia_domain() -> None:
+    msg = build_refinement_message("tecnologia")
+    assert "tecnologia/programação" in msg
+
+
+def test_refinement_prompt_with_geral_domain() -> None:
+    msg = build_refinement_message("geral")
+    assert "acadêmico-científico" in msg
+
+
+def test_refinement_prompt_format_placeholder() -> None:
+    assert "{dominio_label}" in REFINEMENT_PROMPT
 
 
 def test_extensao_labels_keys() -> None:
@@ -102,6 +129,55 @@ def test_extensao_choices_count() -> None:
 
 def test_format_choices_count() -> None:
     assert len(DOCUMENT_FORMAT_CHOICES) == 4
+
+
+def test_detect_domain_juridico() -> None:
+    assert detect_domain("artigo 5 da constituição federal") == "juridico"
+    assert detect_domain("jurisprudência do STF sobre habeas corpus") == "juridico"
+    assert detect_domain("FGTS e sucessão trabalhista") == "juridico"
+    assert detect_domain("alvará judicial para levantamento de valores") == "juridico"
+
+
+def test_detect_domain_tecnologia() -> None:
+    assert detect_domain("programação em Python com machine learning") == "tecnologia"
+    assert detect_domain("arquitetura de software e banco de dados") == "tecnologia"
+    assert detect_domain("docker e kubernetes em cloud computing") == "tecnologia"
+
+
+def test_detect_domain_geral() -> None:
+    assert (
+        detect_domain(
+            "O Papel dos Sistemas de Informação no Apoio ao Processo Decisório Organizacional"
+        )
+        == "geral"
+    )
+    assert detect_domain("impactos da globalização na economia brasileira") == "geral"
+    assert detect_domain("história da arte renascentista") == "geral"
+
+
+def test_build_pesquisa_messages_general_topic_has_correct_domain() -> None:
+    messages = build_pesquisa_messages(
+        tema="O Papel dos Sistemas de Informação no Apoio ao Processo Decisório Organizacional"
+    )
+    system = messages[0]["content"]
+    assert "Domínio Classificado" in system
+    assert "geral" in system
+    assert "Domínio Geral/Acadêmico" in system
+    assert "jurisprudência" not in system
+
+
+def test_build_pesquisa_messages_tech_topic_has_correct_domain() -> None:
+    messages = build_pesquisa_messages(tema="programação funcional em Rust")
+    system = messages[0]["content"]
+    assert "tecnologia" in system
+    assert "Domínio Tecnológico" in system
+
+
+def test_build_pesquisa_messages_legal_topic_has_correct_domain() -> None:
+    messages = build_pesquisa_messages(tema="prescrição penal no código penal")
+    system = messages[0]["content"]
+    assert "juridico" in system
+    assert "Domínio Jurídico" in system
 
 
 def test_build_pesquisa_filename_docx() -> None:
