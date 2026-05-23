@@ -87,12 +87,33 @@ sem explicações, sem comentários fora da peça.
 """
 
 
+PECA_DOCUMENT_TOOL_SECTION = """\
+### CASO PRÁTICO (documento anexado)
+O usuário anexou um arquivo com o enunciado do caso prático.
+O conteúdo NÃO está nesta mensagem — use as ferramentas abaixo para consultá-lo:
+
+- `search_document(query, max_results, context_before, context_after)`: busca
+  palavras-chave no documento. Use para localizar: nomes das partes, fatos
+  relevantes, artigos de lei citados, valores, datas, cláusulas contratuais.
+- `read_document_chunk(start_index, count)`: lê parágrafos específicos.
+  Use para ler a descrição completa do caso, qualificação das partes,
+  ou pedidos mencionados no enunciado.
+
+IMPORTANTE: Inspecione o documento ANTES de redigir a peça. Extraia dele:
+- Quem é o autor e quem é o réu (qualificação)
+- Os fatos juridicamente relevantes (cronologia, valores, descumprimentos)
+- A área do direito e o tipo de peça (se não informados explicitamente)
+- Fundamentos legais mencionados no próprio enunciado
+"""
+
+
 def build_peca_messages(
     *,
     enunciado: str,
     tipo: str | None = None,
     area: str | None = None,
     instrucoes: str | None = None,
+    has_attachment: bool = False,
 ) -> list[dict[str, Any]]:
     tipo_display = tipo if tipo else "(inferir automaticamente)"
     area_display = area if area else "(inferir automaticamente)"
@@ -103,6 +124,9 @@ def build_peca_messages(
         area=area_display,
         instrucoes=instrucoes_display,
     )
+
+    if has_attachment:
+        system_prompt += "\n\n" + PECA_DOCUMENT_TOOL_SECTION
 
     return [
         dict(role="system", content=system_prompt),

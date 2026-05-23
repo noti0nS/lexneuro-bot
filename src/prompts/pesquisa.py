@@ -229,11 +229,29 @@ def detect_domain(tema: str) -> str:
     return "geral"
 
 
+DOCUMENT_TOOL_SECTION = """\
+### DOCUMENTO DO USUÁRIO
+O usuário anexou um documento como fonte primária para esta pesquisa.
+O conteúdo NÃO está nesta mensagem — use as ferramentas abaixo para consultá-lo:
+
+- `search_document(query, max_results, context_before, context_after)`: busca
+  palavras-chave ou frases no documento (case-insensitive). Use context_before/after
+  para ver parágrafos vizinhos.
+- `read_document_chunk(start_index, count)`: lê parágrafos específicos por índice
+  (0-based). Use para ler o início, o fim, ou expandir um trecho encontrado.
+
+IMPORTANTE: O documento é sua fonte PRIMÁRIA. Se houver conflito entre a pesquisa
+web e o documento, o documento prevalece. Inspecione o documento ANTES de fazer
+buscas web — os termos e referências contidos nele devem guiar suas queries.
+"""
+
+
 def build_pesquisa_messages(
     *,
     tema: str,
     extensao: str = "padrao",
     paginas: int = 3,
+    has_attachment: bool = False,
 ) -> list[dict[str, Any]]:
     extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
     dominio = detect_domain(tema)
@@ -252,6 +270,9 @@ def build_pesquisa_messages(
         system_prompt += (
             f"\n\n## DIRETRIZES OBRIGATÓRIAS DE FORMATAÇÃO ABNT\n\n{abnt_reference}"
         )
+
+    if has_attachment:
+        system_prompt += "\n\n" + DOCUMENT_TOOL_SECTION
 
     return [
         dict(role="system", content=system_prompt),

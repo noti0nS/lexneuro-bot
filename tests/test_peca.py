@@ -6,12 +6,12 @@ import discord
 from src.commands.slashes.peca import (
     AREA_CHOICES,
     TIPO_CHOICES,
-    attachment_is_supported,
     build_peca_filename,
     filter_choices,
     area_autocomplete,
     tipo_autocomplete,
 )
+from src.helpers.attachments import attachment_is_supported
 from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.peca import PECA_SYSTEM_PROMPT, build_peca_messages
 

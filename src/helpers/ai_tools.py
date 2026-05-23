@@ -1,12 +1,21 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, cast
 
+import discord
+import httpx
 from openai.types.chat import ChatCompletionMessageToolCall
-from .llm import execute_chat_completion
 from .async_utils import await_task_with_heartbeats
+from .attachments import (
+    DocumentChunks,
+    build_document_chunks,
+    read_attachment_text,
+)
 from .content import get_completion_text
+from .llm import execute_chat_completion
 from .search import fetch_page_content, search_topics
 
 
@@ -68,6 +77,160 @@ FETCH_PAGE_TOOL: list[dict[str, Any]] = [
 ALL_RESEARCH_TOOLS = WEB_SEARCH_TOOL + FETCH_PAGE_TOOL
 
 
+SEARCH_DOCUMENT_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "search_document",
+        "description": (
+            "Search the user's uploaded document for keywords or phrases. "
+            "Case-insensitive substring matching across all paragraphs. "
+            "Optionally include surrounding paragraphs for context."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword or phrase to search for (case-insensitive substring match).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of matching chunks to return (default 5, max 10).",
+                },
+                "context_before": {
+                    "type": "integer",
+                    "description": "Number of paragraphs BEFORE each match to include (default 0).",
+                },
+                "context_after": {
+                    "type": "integer",
+                    "description": "Number of paragraphs AFTER each match to include (default 0).",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+READ_DOCUMENT_CHUNK_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "read_document_chunk",
+        "description": (
+            "Read a specific range of paragraphs from the user's uploaded document "
+            "by chunk index. Use this to scan sections, read the beginning or end, "
+            "or follow up on search_document results."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_index": {
+                    "type": "integer",
+                    "description": "First chunk index to read (0-based).",
+                },
+                "count": {
+                    "type": "integer",
+                    "description": "Number of chunks to read (default 5, max 10).",
+                },
+            },
+            "required": ["start_index"],
+        },
+    },
+}
+
+DOCUMENT_TOOLS: list[dict[str, Any]] = [
+    SEARCH_DOCUMENT_TOOL,
+    READ_DOCUMENT_CHUNK_TOOL,
+]
+
+
+def handle_search_document(doc: DocumentChunks, args: dict[str, Any]) -> str:
+    query = args["query"].lower()
+    max_results = min(args.get("max_results", 5), 10)
+    ctx_before = max(args.get("context_before", 0), 0)
+    ctx_after = max(args.get("context_after", 0), 0)
+
+    hits: list[dict[str, Any]] = []
+    for i, chunk in enumerate(doc.chunks):
+        if query in chunk.lower():
+            start = max(0, i - ctx_before)
+            end = min(doc.total_chunks, i + ctx_after + 1)
+            context_chunks = [
+                {"chunk_index": j, "chunk_text": doc.chunks[j][:2000]}
+                for j in range(start, end)
+            ]
+            hits.append({"match_index": i, "context": context_chunks})
+            if len(hits) >= max_results:
+                break
+
+    if not hits:
+        return json.dumps(
+            {
+                "message": f'No paragraphs matched "{args["query"]}". Try a different keyword.'
+            },
+            ensure_ascii=False,
+        )
+
+    return json.dumps(hits, ensure_ascii=False, default=str)
+
+
+def handle_read_document_chunk(doc: DocumentChunks, args: dict[str, Any]) -> str:
+    start = max(args["start_index"], 0)
+    count = min(args.get("count", 5), 10)
+    end = min(doc.total_chunks, start + count)
+
+    if start >= doc.total_chunks:
+        return json.dumps(
+            {
+                "message": (
+                    f"Start index {start} is out of range. "
+                    f"Document has {doc.total_chunks} chunks."
+                )
+            },
+            ensure_ascii=False,
+        )
+
+    chunks = [
+        {"chunk_index": i, "chunk_text": doc.chunks[i][:2000]}
+        for i in range(start, end)
+    ]
+
+    return json.dumps(chunks, ensure_ascii=False, default=str)
+
+
+@dataclass
+class DocumentToolSetup:
+    doc: DocumentChunks
+    tools: list[dict[str, Any]]
+    on_extra_tool: Callable[[str, dict[str, Any]], str]
+
+
+async def setup_document_tools(
+    attachment: discord.Attachment,
+    httpx_client: httpx.AsyncClient,
+    base_tools: list[dict[str, Any]],
+) -> DocumentToolSetup:
+    """Extract, chunk and wire up document tools for a file attachment.
+
+    Raises ValueError if the extracted content is empty.
+    Other exceptions (download/extraction failures) propagate to caller.
+    """
+    extracted = await read_attachment_text(attachment, httpx_client)
+    if not extracted.strip():
+        raise ValueError("empty_document")
+
+    doc = build_document_chunks(attachment.filename, extracted)
+    tools = [*base_tools, *DOCUMENT_TOOLS]
+
+    def _handle(tool_name: str, args: dict[str, Any]) -> str:
+        if tool_name == "search_document":
+            return handle_search_document(doc, args)
+        if tool_name == "read_document_chunk":
+            return handle_read_document_chunk(doc, args)
+        return '{"error": "Unknown tool"}'
+
+    return DocumentToolSetup(doc=doc, tools=tools, on_extra_tool=_handle)
+
+
 def format_tool_call(tool_call: Any) -> dict[str, Any]:
     return {
         "id": tool_call.id,
@@ -103,11 +266,16 @@ async def run_research_loop(
     tools: list[dict[str, Any]] | None = None,
     reasoning_effort: str | None = None,
     user_id: int,
+    on_extra_tool: Callable[[str, dict[str, Any]], str] | None = None,
 ) -> str:
-    """Run the tool-calling research loop (web_search + fetch_page).
+    """Run the tool-calling research loop (web_search + fetch_page + optional extras).
 
     Returns the final generated text.
     Raises APIError on provider errors.
+
+    on_extra_tool(tool_name, args) -> str:
+        Called for tool calls not handled internally (web_search, fetch_page).
+        Must return the tool result as a JSON string.
     """
     if tools is None:
         tools = ALL_RESEARCH_TOOLS
@@ -262,6 +430,29 @@ async def run_research_loop(
                                     "desta página. Tente outra URL ou "
                                     "continue com as fontes disponíveis."
                                 ),
+                            }
+                        )
+
+                else:
+                    if on_extra_tool is not None:
+                        try:
+                            args = json.loads(tc.function.arguments)
+                        except json.JSONDecodeError:
+                            args = {}
+                        result = on_extra_tool(tc.function.name, args)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": result,
+                            }
+                        )
+                    else:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": f"Erro: ferramenta desconhecida '{tc.function.name}'.",
                             }
                         )
 

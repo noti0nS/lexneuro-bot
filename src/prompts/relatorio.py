@@ -74,6 +74,7 @@ def build_relatorio_messages(
     pesquisar: bool = False,
     instrucoes: str = "",
     fonte_arquivo: str = "",
+    has_attachment: bool = False,
 ) -> list[dict[str, Any]]:
     topicos_display = topicos if topicos else "(inferir da descrição)"
     secoes_display = secoes if secoes else "(decidir automaticamente)"

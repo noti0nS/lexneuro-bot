@@ -5,15 +5,23 @@ from datetime import datetime
 from typing import Any
 
 import discord
+import httpx
 from discord.ext import commands
 from openai import APIError
 
 
 from ...helpers.ai_tools import (
+    ALL_RESEARCH_TOOLS,
     ContentFilterError,
+    DocumentToolSetup,
     run_research_loop,
+    setup_document_tools,
 )
 from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.attachments import (
+    DocumentChunks,
+    attachment_is_supported,
+)
 from ...helpers.content import get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import execute_chat_completion, get_provider_error_detail
@@ -46,6 +54,7 @@ def build_pesquisa_filename(tema: str, user_id: int, ext: str) -> str:
 def register_pesquisa_command(
     discord_bot: commands.Bot,
     state: Any,
+    httpx_client: httpx.AsyncClient,
     user_has_permission: Any,
 ) -> None:
     @discord_bot.tree.command(
@@ -58,6 +67,7 @@ def register_pesquisa_command(
         paginas="Número alvo de páginas (1–50). Sobrepõe a extensão se conflitar.",
         auto_refinar="Auto-refinamento (self-Q&A) antes da geração",
         format="Formato do arquivo de saída",
+        fonte="Documento fonte (.pdf, .docx, .odt, .txt)",
     )
     @discord.app_commands.choices(
         extensao=EXTENSAO_CHOICES,
@@ -74,6 +84,7 @@ def register_pesquisa_command(
         paginas: int = 3,
         auto_refinar: str = "false",
         format: discord.app_commands.Choice[str] | None = None,
+        fonte: discord.Attachment | None = None,
     ) -> None:
         formato_valor = format.value if format else "docx"
 
@@ -104,25 +115,68 @@ def register_pesquisa_command(
             )
             return
 
+        if fonte is not None and not attachment_is_supported(fonte):
+            await interaction.response.send_message(
+                "Tipo de arquivo não suportado. Envie .pdf, .docx, .odt ou .txt.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.send_message(
             "Pesquisando e gerando o documento... Isso pode levar alguns minutos.",
             ephemeral=True,
         )
 
         logging.info(
-            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, auto_refinar: %s, formato: %s)",
+            "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, auto_refinar: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             tema[:80],
             extensao,
             paginas,
             auto_refinar == "true",
             formato_valor,
+            fonte is not None,
         )
+
+        doc: DocumentChunks | None = None
+        on_extra_tool = None
+        extended_tools = list(ALL_RESEARCH_TOOLS)
+
+        if fonte is not None:
+            try:
+                setup: DocumentToolSetup = await setup_document_tools(
+                    fonte, httpx_client, extended_tools
+                )
+            except ValueError:
+                await interaction.followup.send("O arquivo anexado parece estar vazio.")
+                return
+            except Exception:
+                logging.exception(
+                    "Pesquisa file extraction failed (user ID: %s)",
+                    interaction.user.id,
+                )
+                await interaction.followup.send(
+                    "Não consegui extrair o texto do arquivo. Verifique se ele é válido."
+                )
+                return
+
+            doc = setup.doc
+            extended_tools = setup.tools
+            on_extra_tool = setup.on_extra_tool
+
+            logging.info(
+                "Pesquisa file extracted (user ID: %s, filename: %s, chunks: %s, chars: %s)",
+                interaction.user.id,
+                fonte.filename,
+                doc.total_chunks,
+                doc.total_chars,
+            )
 
         messages: list[dict[str, Any]] = build_pesquisa_messages(
             tema=tema,
             extensao=extensao,
             paginas=paginas,
+            has_attachment=doc is not None,
         )
 
         dominio = detect_domain(tema)
@@ -209,6 +263,8 @@ def register_pesquisa_command(
                 max_page_fetches=max_pages,
                 reasoning_effort=reasoning_effort,
                 user_id=interaction.user.id,
+                tools=extended_tools,
+                on_extra_tool=on_extra_tool,
             )
 
             elapsed = datetime.now().timestamp() - request_started_at

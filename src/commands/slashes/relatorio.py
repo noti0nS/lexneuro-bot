@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-from io import BytesIO
 from typing import Any
 
 import discord
@@ -10,8 +9,19 @@ import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...helpers.ai_tools import ContentFilterError, run_research_loop
+from ...helpers.ai_tools import (
+    ALL_RESEARCH_TOOLS,
+    ContentFilterError,
+    DocumentToolSetup,
+    run_research_loop,
+    setup_document_tools,
+)
 from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.attachments import (
+    DocumentChunks,
+    attachment_is_supported,
+    read_attachment_text,
+)
 from ...helpers.content import get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import execute_chat_completion, get_provider_error_detail
@@ -26,8 +36,6 @@ SUPPORTED_INPUT_CONTENT_TYPES = (
 )
 
 SUPPORTED_INPUT_EXTENSIONS = (".pdf", ".docx", ".odt", ".txt")
-
-FILE_MARKER = "### FONTE (extraída do arquivo)"
 
 # Portuguese month names for date formatting
 _MESES = [
@@ -48,27 +56,6 @@ _MESES = [
 
 def _format_date_pt(dt: datetime) -> str:
     return f"{dt.day} de {_MESES[dt.month - 1]} de {dt.year}"
-
-
-def attachment_is_supported(attachment: discord.Attachment) -> bool:
-    content_type = (attachment.content_type or "").lower()
-    filename = attachment.filename.lower()
-    return content_type in SUPPORTED_INPUT_CONTENT_TYPES or filename.endswith(
-        SUPPORTED_INPUT_EXTENSIONS
-    )
-
-
-def _extract_file_text(file_bytes: bytes, filename: str) -> str:
-    from markitdown import MarkItDown
-
-    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
-    # txt files don't need markitdown
-    if ext == "txt":
-        return file_bytes.decode("utf-8", errors="replace")
-    md = MarkItDown(enable_plugins=False)
-    stream = BytesIO(file_bytes)
-    result = md.convert_stream(stream, file_extension=ext)
-    return result.text_content
 
 
 def build_relatorio_filename(titulo: str, user_id: int, ext: str) -> str:
@@ -97,7 +84,7 @@ def register_relatorio_command(
         secoes="Seções para cada tópico, separadas por vírgula (opcional)",
         paginas="Número alvo de páginas (1–50)",
         pesquisar="Fazer pesquisa web para enriquecer o relatório?",
-        arquivo="Arquivo com instruções ou material fonte (.pdf, .docx, .odt, .txt)",
+        fonte="Documento fonte (.pdf, .docx, .odt, .txt)",
         instrucoes="Instruções adicionais para a geração do relatório",
         formato="Formato do arquivo de saída",
     )
@@ -116,7 +103,7 @@ def register_relatorio_command(
         secoes: str = "",
         paginas: int = 6,
         pesquisar: str = "false",
-        arquivo: discord.Attachment | None = None,
+        fonte: discord.Attachment | None = None,
         instrucoes: str = "",
         formato: discord.app_commands.Choice[str] | None = None,
     ) -> None:
@@ -157,7 +144,7 @@ def register_relatorio_command(
             return
 
         # Validate attachment if provided
-        if arquivo is not None and not attachment_is_supported(arquivo):
+        if fonte is not None and not attachment_is_supported(fonte):
             await interaction.response.send_message(
                 (
                     "Tipo de arquivo não suportado. "
@@ -173,55 +160,90 @@ def register_relatorio_command(
         )
 
         logging.info(
-            "Relatorio started (user ID: %s, titulo: %r, paginas: %s, pesquisar: %s, formato: %s)",
+            "Relatorio started (user ID: %s, titulo: %r, paginas: %s, pesquisar: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             titulo[:80],
             paginas,
             pesquisar == "true",
             formato_valor,
+            fonte is not None,
         )
 
-        # Extract file text if attachment provided
+        pesquisar_enabled = pesquisar == "true"
+        doc: DocumentChunks | None = None
         fonte_arquivo = ""
-        if arquivo is not None:
-            try:
-                response = await httpx_client.get(arquivo.url)
-                response.raise_for_status()
-                extracted = _extract_file_text(response.content, arquivo.filename)
+        on_extra_tool = None
+        extended_tools = list(ALL_RESEARCH_TOOLS)
+
+        if fonte is not None:
+            if pesquisar_enabled:
+                try:
+                    setup: DocumentToolSetup = await setup_document_tools(
+                        fonte, httpx_client, extended_tools
+                    )
+                except ValueError:
+                    await interaction.followup.send(
+                        "O arquivo anexado parece estar vazio."
+                    )
+                    return
+                except Exception:
+                    logging.exception(
+                        "Relatorio file extraction failed (user ID: %s)",
+                        interaction.user.id,
+                    )
+                    await interaction.followup.send(
+                        "Não consegui extrair o texto do arquivo. Verifique se ele é válido."
+                    )
+                    return
+
+                doc = setup.doc
+                extended_tools = setup.tools
+                on_extra_tool = setup.on_extra_tool
+
+                logging.info(
+                    "Relatorio file stored as chunks (user ID: %s, filename: %s, chunks: %s)",
+                    interaction.user.id,
+                    fonte.filename,
+                    doc.total_chunks,
+                )
+            else:
+                try:
+                    extracted = await read_attachment_text(fonte, httpx_client)
+                except Exception:
+                    logging.exception(
+                        "Relatorio file extraction failed (user ID: %s)",
+                        interaction.user.id,
+                    )
+                    await interaction.followup.send(
+                        "Não consegui extrair o texto do arquivo. Verifique se ele é válido."
+                    )
+                    return
+
                 if not extracted.strip():
                     await interaction.followup.send(
                         "O arquivo anexado parece estar vazio."
                     )
                     return
-                fonte_arquivo = extracted
+
                 logging.info(
-                    "Relatorio file extracted (user ID: %s, length: %s)",
+                    "Relatorio file extracted (user ID: %s, chars: %s)",
                     interaction.user.id,
-                    len(fonte_arquivo),
+                    len(extracted),
                 )
-            except Exception:
-                logging.exception(
-                    "Relatorio file extraction failed (user ID: %s)",
-                    interaction.user.id,
-                )
-                await interaction.followup.send(
-                    "Não consegui ler o arquivo. Verifique se ele é válido."
-                )
-                return
 
-        # Truncate file text if over max
+                relatorio_config = state.config.get("relatorio", {})
+                max_fonte_chars = relatorio_config.get("max_fonte_chars", 75000)
+                fonte_arquivo = extracted
+                if len(fonte_arquivo) > max_fonte_chars:
+                    logging.warning(
+                        "Relatorio file text truncated (user ID: %s, original: %s, max: %s)",
+                        interaction.user.id,
+                        len(fonte_arquivo),
+                        max_fonte_chars,
+                    )
+                    fonte_arquivo = fonte_arquivo[:max_fonte_chars]
+
         relatorio_config = state.config.get("relatorio", {})
-        max_fonte_chars = relatorio_config.get("max_fonte_chars", 75000)
-        if len(fonte_arquivo) > max_fonte_chars:
-            logging.warning(
-                "Relatorio file text truncated (user ID: %s, original: %s, max: %s)",
-                interaction.user.id,
-                len(fonte_arquivo),
-                max_fonte_chars,
-            )
-            fonte_arquivo = fonte_arquivo[:max_fonte_chars]
-
-        # Build messages
         autor = interaction.user.display_name
         data_atual = _format_date_pt(datetime.now())
 
@@ -233,9 +255,10 @@ def register_relatorio_command(
             topicos=topicos,
             secoes=secoes,
             paginas=paginas,
-            pesquisar=pesquisar == "true",
+            pesquisar=pesquisar_enabled,
             instrucoes=instrucoes,
             fonte_arquivo=fonte_arquivo,
+            has_attachment=doc is not None,
         )
 
         # Model resolution
@@ -244,7 +267,6 @@ def register_relatorio_command(
 
         raw_output = ""
         request_started_at = datetime.now().timestamp()
-        pesquisar_enabled = pesquisar == "true"
 
         try:
             if pesquisar_enabled:
@@ -262,6 +284,8 @@ def register_relatorio_command(
                     search_results_per_topic=search_results_count,
                     max_page_fetches=max_pages,
                     user_id=interaction.user.id,
+                    tools=extended_tools,
+                    on_extra_tool=on_extra_tool,
                 )
             else:
                 logging.info(

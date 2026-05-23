@@ -11,7 +11,7 @@ from openai import APIError
 
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.documents import (
+from ...helpers.attachments import (
     attachment_is_supported_word_document,
     read_word_attachment,
 )

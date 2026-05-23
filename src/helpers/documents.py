@@ -10,12 +10,6 @@ from odf.opendocument import load as odf_load
 from odf.text import H, P
 
 import discord
-import httpx
-
-from .ui import (
-    SUPPORTED_WORD_ATTACHMENT_EXTENSIONS,
-    SUPPORTED_WORD_CONTENT_TYPES,
-)
 
 DOCUMENT_FORMAT_CHOICES = [
     discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),
@@ -178,30 +172,6 @@ def get_processor(format_or_ext: str) -> DocumentProcessor:
     if processor_cls is None:
         raise ValueError(f"unsupported_document_format: {format_or_ext}")
     return processor_cls()
-
-
-def attachment_is_supported_word_document(attachment: discord.Attachment) -> bool:
-    content_type = attachment.content_type or ""
-    filename = attachment.filename.lower()
-    return content_type in SUPPORTED_WORD_CONTENT_TYPES or filename.endswith(
-        SUPPORTED_WORD_ATTACHMENT_EXTENSIONS
-    )
-
-
-async def read_word_attachment(
-    attachment: discord.Attachment, max_chars: int, http_client: httpx.AsyncClient
-) -> tuple[str, bool]:
-    if not attachment_is_supported_word_document(attachment):
-        raise ValueError("unsupported")
-
-    response = await http_client.get(attachment.url)
-    response.raise_for_status()
-
-    ext = attachment.filename.lower().rsplit(".", 1)[-1]
-    processor = get_processor(ext)
-    text = processor.extract_text(response.content)
-
-    return text[:max_chars], len(text) > max_chars
 
 
 def _run_pandoc(markdown_text: str, output_format: str) -> bytes:

@@ -4,10 +4,21 @@ from datetime import datetime
 from typing import Any
 
 import discord
+import httpx
 from discord.ext import commands
 from openai import APIError
 
-from ...helpers.ai_tools import ContentFilterError, run_research_loop
+from ...helpers.ai_tools import (
+    ALL_RESEARCH_TOOLS,
+    ContentFilterError,
+    DocumentToolSetup,
+    run_research_loop,
+    setup_document_tools,
+)
+from ...helpers.attachments import (
+    DocumentChunks,
+    attachment_is_supported,
+)
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import get_provider_error_detail
 from ...helpers.send import send_document_result
@@ -40,6 +51,7 @@ def build_jurisprudencia_filename(consulta: str, user_id: int, ext: str) -> str:
 def register_jurisprudencia_command(
     discord_bot: commands.Bot,
     state: Any,
+    httpx_client: httpx.AsyncClient,
     user_has_permission: Any,
 ) -> None:
     @discord_bot.tree.command(
@@ -51,6 +63,7 @@ def register_jurisprudencia_command(
         tribunal="Tribunal onde buscar (padrão: todos)",
         periodo="Período desejado (ex: 2023-2024, últimos 2 anos, após 2020)",
         formato="Formato de saída da pesquisa",
+        fonte="Documento fonte (.pdf, .docx, .odt, .txt)",
     )
     @discord.app_commands.choices(
         tribunal=TRIBUNAL_CHOICES,
@@ -62,6 +75,7 @@ def register_jurisprudencia_command(
         tribunal: discord.app_commands.Choice[str] | None = None,
         periodo: str | None = None,
         formato: discord.app_commands.Choice[str] | None = None,
+        fonte: discord.Attachment | None = None,
     ) -> None:
         tribunal_valor = tribunal.value if tribunal else "todos"
         formato_valor = formato.value if formato else "docx"
@@ -86,24 +100,67 @@ def register_jurisprudencia_command(
             )
             return
 
+        if fonte is not None and not attachment_is_supported(fonte):
+            await interaction.response.send_message(
+                "Tipo de arquivo não suportado. Envie .pdf, .docx, .odt ou .txt.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.send_message(
             "Buscando jurisprudência... Isso pode levar alguns minutos.",
             ephemeral=True,
         )
 
         logging.info(
-            "Jurisprudencia started (user ID: %s, consulta: %r, tribunal: %s, periodo: %s, formato: %s)",
+            "Jurisprudencia started (user ID: %s, consulta: %r, tribunal: %s, periodo: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             consulta[:80],
             tribunal_valor,
             periodo,
             formato_valor,
+            fonte is not None,
         )
+
+        doc: DocumentChunks | None = None
+        on_extra_tool = None
+        extended_tools = list(ALL_RESEARCH_TOOLS)
+
+        if fonte is not None:
+            try:
+                setup: DocumentToolSetup = await setup_document_tools(
+                    fonte, httpx_client, extended_tools
+                )
+            except ValueError:
+                await interaction.followup.send("O arquivo anexado parece estar vazio.")
+                return
+            except Exception:
+                logging.exception(
+                    "Jurisprudencia file extraction failed (user ID: %s)",
+                    interaction.user.id,
+                )
+                await interaction.followup.send(
+                    "Não consegui extrair o texto do arquivo. Verifique se ele é válido."
+                )
+                return
+
+            doc = setup.doc
+            extended_tools = setup.tools
+            on_extra_tool = setup.on_extra_tool
+
+            logging.info(
+                "Jurisprudencia file extracted (user ID: %s, filename: %s, chunks: %s, chars: %s)",
+                interaction.user.id,
+                fonte.filename,
+                doc.total_chunks,
+                doc.total_chars,
+            )
 
         messages: list[dict[str, Any]] = build_jurisprudencia_messages(
             consulta=consulta,
             tribunal=tribunal_valor,
             periodo=periodo,
+            has_attachment=doc is not None,
         )
 
         jur_config = state.config.get("jurisprudencia", {})
@@ -122,6 +179,8 @@ def register_jurisprudencia_command(
                 search_results_per_topic=search_results_count,
                 max_page_fetches=max_pages,
                 user_id=interaction.user.id,
+                tools=extended_tools,
+                on_extra_tool=on_extra_tool,
             )
 
             logging.info(

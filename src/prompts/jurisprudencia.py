@@ -63,11 +63,22 @@ Responda APENAS com a pesquisa de jurisprudência — sem introduções, sem
 """
 
 
+JURIS_DOCUMENT_TOOL_SECTION = """\
+### DOCUMENTO DE REFERÊNCIA
+O usuário anexou um documento (ementas, acórdãos, doutrina) como referência.
+Use `search_document` para extrair números de processo, teses e citações.
+Use `read_document_chunk` para ler trechos específicos.
+Use esses achados como base para suas buscas web — os números de processo e
+termos jurídicos do documento devem direcionar suas queries.
+"""
+
+
 def build_jurisprudencia_messages(
     *,
     consulta: str,
     tribunal: str = "todos",
     periodo: str | None = None,
+    has_attachment: bool = False,
 ) -> list[dict[str, Any]]:
     tribunal_label = TRIBUNAL_LABELS.get(tribunal, tribunal)
     periodo_str = periodo if periodo and periodo.strip() else "sem restrição"
@@ -82,7 +93,11 @@ def build_jurisprudencia_messages(
         f"decisões recentes e de tribunais superiores."
     )
 
+    system_prompt = JURISPRUDENCIA_SYSTEM_PROMPT
+    if has_attachment:
+        system_prompt += "\n\n" + JURIS_DOCUMENT_TOOL_SECTION
+
     return [
-        dict(role="system", content=JURISPRUDENCIA_SYSTEM_PROMPT),
+        dict(role="system", content=system_prompt),
         dict(role="user", content=user_message),
     ]

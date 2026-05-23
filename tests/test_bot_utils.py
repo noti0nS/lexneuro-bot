@@ -13,7 +13,7 @@ from src.commands.slashes.abnt import (
     build_abnt_result_message,
 )
 from src.helpers.content import get_completion_text
-from src.helpers.documents import attachment_is_supported_word_document
+from src.helpers.attachments import attachment_is_supported_word_document
 
 
 @dataclass

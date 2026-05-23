@@ -27,10 +27,13 @@ from .commands.triggers import get_handler
 from .config import (
     get_config,
 )
+from .helpers.attachments import (
+    read_attachment_text,
+)
+from .helpers.content import sanitize_discord_markdown
 from .helpers.llm import (
     stream_chat_completion,
 )
-from .helpers.content import sanitize_discord_markdown
 from .helpers.status_scheduler import start_status_scheduler
 from .helpers.ui import (
     EMBED_COLOR_COMPLETE,
@@ -200,8 +203,10 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     register_abnt_command(discord_bot, state, httpx_client, user_has_permission)
     register_peca_command(discord_bot, state, httpx_client, user_has_permission)
     register_cronograma_command(discord_bot, state)
-    register_pesquisa_command(discord_bot, state, user_has_permission)
-    register_jurisprudencia_command(discord_bot, state, user_has_permission)
+    register_pesquisa_command(discord_bot, state, httpx_client, user_has_permission)
+    register_jurisprudencia_command(
+        discord_bot, state, httpx_client, user_has_permission
+    )
     register_relatorio_command(discord_bot, state, httpx_client, user_has_permission)
     register_regex_command(discord_bot, state)
     register_sql_command(discord_bot, state, httpx_client)
@@ -263,22 +268,57 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                     ).lstrip()
 
                     if curr_msg.id == new_msg.id or curr_msg.id == direct_reply_id:
+                        max_attachment_kb = state.config.get("max_attachment_kb", 512)
+                        max_file_attachments = state.config.get(
+                            "max_file_attachments", 3
+                        )
+
                         good_attachments = [
                             att
-                            for att in curr_msg.attachments
-                            if (content_type := att.content_type)
-                            and any(
-                                content_type.startswith(kind)
-                                for kind in ("text", "image")
+                            for att in curr_msg.attachments[:max_file_attachments]
+                            if (ct := att.content_type)
+                            and not any(
+                                ct.startswith(kind) for kind in ("audio/", "video/")
                             )
+                            and (att.size / 1024) <= max_attachment_kb
                         ]
 
-                        attachment_responses = await asyncio.gather(
-                            *[httpx_client.get(att.url) for att in good_attachments]
+                        image_attachments = [
+                            att
+                            for att in good_attachments
+                            if (ct := att.content_type) and ct.startswith("image/")
+                        ]
+                        doc_attachments = [
+                            att
+                            for att in good_attachments
+                            if att not in image_attachments
+                        ]
+
+                        image_responses = await asyncio.gather(
+                            *[httpx_client.get(att.url) for att in image_attachments]
                         )
+
+                        doc_texts: list[str] = []
+                        for att in doc_attachments:
+                            if (ct := att.content_type) and ct.startswith("text/"):
+                                resp = await httpx_client.get(att.url)
+                                text = resp.text
+                                doc_texts.append(
+                                    f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
+                                )
+                            else:
+                                try:
+                                    text = await read_attachment_text(att, httpx_client)
+                                    doc_texts.append(
+                                        f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
+                                    )
+                                except Exception:
+                                    pass
                     else:
                         good_attachments = []
-                        attachment_responses = []
+                        image_attachments = []
+                        image_responses = []
+                        doc_texts = []
 
                     curr_node.role = (
                         "assistant" if curr_msg.author == bot_user else "user"
@@ -304,12 +344,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                                 str,  # type: ignore[no-any-return]
                             )
                         ]
-                        + [
-                            resp.text
-                            for att, resp in zip(good_attachments, attachment_responses)
-                            if (content_type := att.content_type)
-                            and content_type.startswith("text")
-                        ]
+                        + doc_texts
                     )
 
                     curr_node.images = (
@@ -320,7 +355,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
                                     url=f"data:{content_type};base64,{b64encode(resp.content).decode('utf-8')}"
                                 ),
                             )
-                            for att, resp in zip(good_attachments, attachment_responses)
+                            for att, resp in zip(image_attachments, image_responses)
                             if (content_type := att.content_type)
                             and content_type.startswith("image")
                         ]

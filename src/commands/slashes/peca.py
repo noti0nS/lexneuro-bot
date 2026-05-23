@@ -1,49 +1,30 @@
 import asyncio
+import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime
-from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 import discord
 import httpx
 from discord.ext import commands
 from openai import APIError
 
+from ...helpers.ai_tools import (
+    DocumentToolSetup,
+    setup_document_tools,
+)
 from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.attachments import (
+    DocumentChunks,
+    attachment_is_supported,
+)
 from ...helpers.content import get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
 from ...helpers.llm import execute_chat_completion, get_provider_error_detail
 from ...helpers.send import send_document_result
 from ...prompts.peca import build_peca_messages
-
-SUPPORTED_INPUT_CONTENT_TYPES = (
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.oasis.opendocument.text",
-)
-
-SUPPORTED_INPUT_EXTENSIONS = (".pdf", ".docx", ".odt")
-
-FILE_MARKER = "### CASO PRÁTICO (extraído do arquivo)"
-
-
-def attachment_is_supported(attachment: discord.Attachment) -> bool:
-    content_type = (attachment.content_type or "").lower()
-    filename = attachment.filename.lower()
-    return content_type in SUPPORTED_INPUT_CONTENT_TYPES or filename.endswith(
-        SUPPORTED_INPUT_EXTENSIONS
-    )
-
-
-def _extract_file_text(file_bytes: bytes, filename: str) -> str:
-    from markitdown import MarkItDown
-
-    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
-    md = MarkItDown(enable_plugins=False)
-    stream = BytesIO(file_bytes)
-    result = md.convert_stream(stream, file_extension=ext)
-    return result.text_content
 
 
 TIPO_CHOICES = [
@@ -121,7 +102,7 @@ def register_peca_command(
     )
     @discord.app_commands.describe(
         enunciado="Enunciado do caso prático ou instruções da peça",
-        arquivo="Arquivo (.pdf, .docx, .odt) com o enunciado do caso",
+        fonte="Documento fonte (.pdf, .docx, .odt, .txt)",
         tipo="Tipo da peça processual (se omitido, o bot infere)",
         area="Área do Direito (ex: Civil, Penal, Trabalhista)",
         instrucoes="Instruções adicionais para a geração da peça",
@@ -132,7 +113,7 @@ def register_peca_command(
     async def peca_command(
         interaction: discord.Interaction,
         enunciado: str = "",
-        arquivo: discord.Attachment | None = None,
+        fonte: discord.Attachment | None = None,
         tipo: str | None = None,
         area: str | None = None,
         instrucoes: str | None = None,
@@ -140,7 +121,7 @@ def register_peca_command(
     ) -> None:
         formato_valor = format.value if format else "docx"
 
-        if not enunciado.strip() and arquivo is None:
+        if not enunciado.strip() and fonte is None:
             await interaction.response.send_message(
                 "Informe um enunciado ou anexe um arquivo (.pdf, .docx, .odt) com o caso.",
                 ephemeral=True,
@@ -154,22 +135,25 @@ def register_peca_command(
             return
 
         peca_config = state.config.get("peca", {})
-        max_enunciado_chars = peca_config.get("max_enunciado_chars", 50000)
         max_file_mb = peca_config.get("max_file_mb", 25)
         peca_model = peca_config.get("model")
         curr_model = peca_model if peca_model else state.curr_model
 
         combined_text = enunciado.strip()
 
-        if arquivo is not None:
-            if not attachment_is_supported(arquivo):
+        doc: DocumentChunks | None = None
+        peca_tools: list[dict[str, Any]] = []
+        peca_on_extra_tool: Callable[[str, dict[str, Any]], str] | None = None
+
+        if fonte is not None:
+            if not attachment_is_supported(fonte):
                 await interaction.response.send_message(
-                    "Tipo de documento não suportado. Envie um arquivo .pdf, .docx ou .odt.",
+                    "Tipo de documento não suportado. Envie um arquivo .pdf, .docx, .odt ou .txt.",
                     ephemeral=True,
                 )
                 return
 
-            file_size_mb = arquivo.size / (1024 * 1024)
+            file_size_mb = fonte.size / (1024 * 1024)
             if file_size_mb > max_file_mb:
                 await interaction.response.send_message(
                     f"O arquivo excede o limite de {max_file_mb} MB "
@@ -182,74 +166,41 @@ def register_peca_command(
             logging.info(
                 "Peça file download started (user ID: %s, file: %s)",
                 interaction.user.id,
-                arquivo.filename,
+                fonte.filename,
             )
 
             try:
-                response = await httpx_client.get(arquivo.url)
-                response.raise_for_status()
-            except Exception:
-                logging.exception(
-                    "Peça file download failed (user ID: %s, file: %s)",
-                    interaction.user.id,
-                    arquivo.filename,
+                setup: DocumentToolSetup = await setup_document_tools(
+                    fonte, httpx_client, []
                 )
-                await interaction.response.send_message(
-                    "Não consegui baixar o anexo. Tente novamente.",
-                    ephemeral=True,
-                )
-                return
-
-            logging.info(
-                "Peça file extraction started (user ID: %s, file: %s, bytes: %s)",
-                interaction.user.id,
-                arquivo.filename,
-                len(response.content),
-            )
-
-            try:
-                extracted = await asyncio.to_thread(
-                    _extract_file_text, response.content, arquivo.filename
-                )
-            except Exception:
-                logging.exception(
-                    "Peça file extraction failed (user ID: %s, file: %s)",
-                    interaction.user.id,
-                    arquivo.filename,
-                )
-                await interaction.response.send_message(
-                    "Não consegui extrair o texto do anexo. Verifique se o arquivo é válido.",
-                    ephemeral=True,
-                )
-                return
-
-            if not extracted.strip():
+            except ValueError:
                 await interaction.response.send_message(
                     "O documento anexado parece estar vazio.",
                     ephemeral=True,
                 )
                 return
+            except Exception:
+                logging.exception(
+                    "Peça file extraction failed (user ID: %s, file: %s)",
+                    interaction.user.id,
+                    fonte.filename,
+                )
+                await interaction.response.send_message(
+                    "Não consegui extrair o texto do arquivo. Verifique se ele é válido.",
+                    ephemeral=True,
+                )
+                return
+
+            doc = setup.doc
+            peca_tools = setup.tools
+            peca_on_extra_tool = setup.on_extra_tool
 
             logging.info(
-                "Peça file extraction completed (user ID: %s, file: %s, chars: %s)",
+                "Peça file extraction completed (user ID: %s, file: %s, chunks: %s, chars: %s)",
                 interaction.user.id,
-                arquivo.filename,
-                len(extracted),
-            )
-
-            if combined_text:
-                combined_text = f"{combined_text}\n\n{FILE_MARKER}\n\n{extracted}"
-            else:
-                combined_text = f"{FILE_MARKER}\n\n{extracted}"
-
-        total_chars = len(combined_text)
-        if total_chars > max_enunciado_chars:
-            combined_text = combined_text[:max_enunciado_chars]
-            logging.warning(
-                "Peça enunciado truncated (user ID: %s, original: %s, max: %s)",
-                interaction.user.id,
-                total_chars,
-                max_enunciado_chars,
+                fonte.filename,
+                doc.total_chunks,
+                doc.total_chars,
             )
 
         await interaction.response.send_message(
@@ -258,12 +209,13 @@ def register_peca_command(
         )
 
         logging.info(
-            "Peça command started (user ID: %s, chars: %s, tipo: %r, area: %r, format: %s)",
+            "Peça command started (user ID: %s, chars: %s, tipo: %r, area: %r, format: %s, has_file: %s)",
             interaction.user.id,
             len(combined_text),
             tipo,
             area,
             formato_valor,
+            doc is not None,
         )
 
         messages = build_peca_messages(
@@ -271,31 +223,98 @@ def register_peca_command(
             tipo=tipo,
             area=area,
             instrucoes=instrucoes,
+            has_attachment=doc is not None,
         )
 
         raw_output = ""
         request_started_at = datetime.now().timestamp()
 
         try:
-            logging.info(
-                "Peça LLM request starting (user ID: %s, model: %s)",
-                interaction.user.id,
-                curr_model,
-            )
+            if doc is not None:
+                for iteration in range(5):
+                    logging.info(
+                        "Peça LLM tool iteration %s/5 (user ID: %s, model: %s)",
+                        iteration + 1,
+                        interaction.user.id,
+                        curr_model,
+                    )
 
-            completion_task = asyncio.create_task(
-                execute_chat_completion(
-                    config=state.config,
-                    model_name=curr_model,
-                    messages=messages,
-                    stream=False,
+                    completion_task = asyncio.create_task(
+                        execute_chat_completion(
+                            config=state.config,
+                            model_name=curr_model,
+                            messages=messages,
+                            stream=False,
+                            tools=peca_tools,
+                            tool_choice="auto",
+                        )
+                    )
+                    completion = await await_task_with_heartbeats(
+                        completion_task,
+                        f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
+                    )
+                    choice = completion.choices[0]
+
+                    if choice.finish_reason != "tool_calls":
+                        raw_output = get_completion_text(completion)
+                        break
+
+                    if choice.message and choice.message.tool_calls:
+                        messages.append(choice.message.to_dict())
+                        for tc_raw in choice.message.tool_calls:
+                            tc = cast(Any, tc_raw)
+                            try:
+                                args = json.loads(tc.function.arguments)
+                            except json.JSONDecodeError:
+                                args = {}
+                            assert peca_on_extra_tool is not None
+                            result = peca_on_extra_tool(tc.function.name, args)
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
+                                    "content": result,
+                                }
+                            )
+                else:
+                    logging.warning(
+                        "Peça tool loop exhausted, forcing final call (user ID: %s)",
+                        interaction.user.id,
+                    )
+                    completion_task = asyncio.create_task(
+                        execute_chat_completion(
+                            config=state.config,
+                            model_name=curr_model,
+                            messages=messages,
+                            stream=False,
+                            tool_choice="none",
+                        )
+                    )
+                    completion = await await_task_with_heartbeats(
+                        completion_task,
+                        f"Peça final generation still running (user ID: {interaction.user.id})",
+                    )
+                    raw_output = get_completion_text(completion)
+            else:
+                logging.info(
+                    "Peça LLM request starting (user ID: %s, model: %s)",
+                    interaction.user.id,
+                    curr_model,
                 )
-            )
-            completion = await await_task_with_heartbeats(
-                completion_task,
-                f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
-            )
-            raw_output = get_completion_text(completion)
+
+                completion_task = asyncio.create_task(
+                    execute_chat_completion(
+                        config=state.config,
+                        model_name=curr_model,
+                        messages=messages,
+                        stream=False,
+                    )
+                )
+                completion = await await_task_with_heartbeats(
+                    completion_task,
+                    f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
+                )
+                raw_output = get_completion_text(completion)
 
             elapsed = datetime.now().timestamp() - request_started_at
             logging.info(
