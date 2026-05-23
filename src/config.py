@@ -1,9 +1,16 @@
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, TypedDict
 
 import yaml
 from openai import AsyncOpenAI
+
+
+DEFAULT_MAX_TEXT = 100000
+DEFAULT_MAX_MESSAGES = 25
+DEFAULT_MAX_ATTACHMENT_KB = 512
+DEFAULT_MAX_FILE_ATTACHMENTS = 3
 
 
 class OpenAIRequestConfig(TypedDict):
@@ -162,3 +169,24 @@ def build_openai_chat_completion_kwargs(
             kwargs["extra_body"] = merged_extra
 
     return kwargs
+
+
+@dataclass
+class Limits:
+    max_text: int
+    max_messages: int
+    max_attachment_kb: int
+    max_file_attachments: int
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "Limits":
+        return cls(
+            max_text=config.get("max_text", DEFAULT_MAX_TEXT),
+            max_messages=config.get("max_messages", DEFAULT_MAX_MESSAGES),
+            max_attachment_kb=config.get(
+                "max_attachment_kb", DEFAULT_MAX_ATTACHMENT_KB
+            ),
+            max_file_attachments=config.get(
+                "max_file_attachments", DEFAULT_MAX_FILE_ATTACHMENTS
+            ),
+        )

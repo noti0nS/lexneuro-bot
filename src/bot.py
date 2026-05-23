@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import types
-from base64 import b64encode
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
@@ -25,6 +24,7 @@ from .commands.slashes.sql_cmd import register_sql_command
 from .commands.slashes.status import register_status_commands
 from .commands.triggers import get_handler
 from .config import (
+    Limits,
     get_config,
 )
 from .helpers.attachments import (
@@ -37,11 +37,132 @@ from .helpers.llm import (
 from .helpers.status_scheduler import start_status_scheduler
 from .helpers.ui import (
     EMBED_COLOR_COMPLETE,
+    EMBED_DESCRIPTION_MAX_LENGTH,
     MAX_MESSAGE_NODES,
+    PLAIN_RESPONSE_MAX_LENGTH,
     STREAMING_INDICATOR,
     TRIGGER_PREFIX,
-    VISION_MODEL_TAGS,
 )
+
+
+@dataclass
+class MsgNode:
+    role: Literal["user", "assistant"] = "assistant"
+    text: str | None = None
+    has_bad_attachments: bool = False
+    fetch_parent_failed: bool = False
+    parent_msg: discord.Message | None = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+@dataclass
+class AttachmentResult:
+    good_attachments: list[discord.Attachment]
+    doc_texts: list[str]
+    has_bad_attachments: bool
+
+    @classmethod
+    def empty(cls) -> "AttachmentResult":
+        return cls([], [], False)
+
+
+def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands.Bot:
+    config = initial_config or get_config()
+    curr_model = next(iter(config["models"]))
+    msg_nodes: dict[int, MsgNode] = {}
+    channel_locks: dict[int, asyncio.Lock] = {}
+    state = types.SimpleNamespace(config=config, curr_model=curr_model)
+
+    intents = discord.Intents.default()
+    intents.message_content = True
+    activity = discord.CustomActivity(
+        name=(state.config.get("status_message") or "github.com/noti0nS/lexneuro-bot")[
+            :128
+        ]
+    )
+    discord_bot = commands.Bot(
+        intents=intents, activity=activity, command_prefix=commands.when_mentioned
+    )
+    httpx_client = httpx.AsyncClient()
+
+    register_help_command(discord_bot, state)
+    register_model_command(discord_bot, state)
+    register_status_commands(discord_bot, state)
+    register_abnt_command(discord_bot, state, httpx_client, user_has_permission)
+    register_peca_command(discord_bot, state, httpx_client, user_has_permission)
+    register_cronograma_command(discord_bot, state)
+    register_pesquisa_command(discord_bot, state, httpx_client, user_has_permission)
+    register_jurisprudencia_command(
+        discord_bot, state, httpx_client, user_has_permission
+    )
+    register_relatorio_command(discord_bot, state, httpx_client, user_has_permission)
+    register_regex_command(discord_bot, state)
+    register_sql_command(discord_bot, state, httpx_client)
+    register_json_command(discord_bot, state, httpx_client)
+
+    @discord_bot.event
+    async def on_ready() -> None:
+        if client_id := state.config.get("client_id"):
+            logging.info(
+                "\n\nBOT INVITE URL:\nhttps://discord.com/oauth2/authorize?client_id=%s&permissions=412317191168&scope=bot\n",
+                client_id,
+            )
+
+        await discord_bot.tree.sync()
+
+        start_status_scheduler(discord_bot)
+
+    @discord_bot.event
+    async def on_message(new_msg: discord.Message) -> None:
+        content = new_msg.content
+
+        if content.startswith(TRIGGER_PREFIX) and not new_msg.author.bot:
+            await _handle_trigger(new_msg, state, httpx_client)
+            return
+
+        bot_user = discord_bot.user
+        if bot_user is None:
+            return
+
+        if not should_process_message(new_msg, bot_user, msg_nodes):
+            return
+
+        if not user_has_permission(new_msg.author, new_msg.channel, state.config):
+            return
+
+        channel_lock = channel_locks.setdefault(new_msg.channel.id, asyncio.Lock())
+        if channel_lock.locked():
+            return
+
+        limits = Limits.from_config(state.config)
+
+        messages, user_warnings = await _build_conversation_history(
+            new_msg, bot_user, msg_nodes, limits, httpx_client
+        )
+
+        logging.debug(
+            "Message received (user ID: %s, attachments: %s, conversation length: %s):\n%s",
+            new_msg.author.id,
+            len(new_msg.attachments),
+            len(messages),
+            new_msg.content,
+        )
+
+        messages.append(
+            dict(
+                role="system",
+                content=_build_system_prompt(state.config),
+            )
+        )
+
+        async with channel_lock:
+            await _stream_and_send_response(
+                new_msg, state, messages, user_warnings, msg_nodes
+            )
+
+        await _evict_msg_nodes(msg_nodes)
+
+    return discord_bot
 
 
 async def _handle_trigger(
@@ -70,17 +191,6 @@ async def _handle_trigger(
             cmd_name,
             message.author.id,
         )
-
-
-@dataclass
-class MsgNode:
-    role: Literal["user", "assistant"] = "assistant"
-    text: str | None = None
-    images: list[dict[str, Any]] = field(default_factory=list)
-    has_bad_attachments: bool = False
-    fetch_parent_failed: bool = False
-    parent_msg: discord.Message | None = None
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 def should_process_message(
@@ -178,501 +288,420 @@ def user_has_permission(
     return not is_bad_user and not is_bad_channel
 
 
-def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands.Bot:
-    config = initial_config or get_config()
-    curr_model = next(iter(config["models"]))
-    msg_nodes: dict[int, MsgNode] = {}
-    channel_locks: dict[int, asyncio.Lock] = {}
-    state = types.SimpleNamespace(config=config, curr_model=curr_model)
+async def _build_conversation_history(
+    new_msg: discord.Message,
+    bot_user: discord.ClientUser,
+    msg_nodes: dict[int, MsgNode],
+    limits: Limits,
+    httpx_client: httpx.AsyncClient,
+) -> tuple[list[dict[str, Any]], set[str]]:
+    messages: list[dict[str, Any]] = []
+    user_warnings: set[str] = set()
+    curr_msg: discord.Message | None = new_msg
+    direct_reply_id = new_msg.reference.message_id if new_msg.reference else None
 
-    intents = discord.Intents.default()
-    intents.message_content = True
-    activity = discord.CustomActivity(
-        name=(state.config.get("status_message") or "github.com/noti0nS/lexneuro-bot")[
-            :128
-        ]
-    )
-    discord_bot = commands.Bot(
-        intents=intents, activity=activity, command_prefix=commands.when_mentioned
-    )
-    httpx_client = httpx.AsyncClient()
+    while curr_msg is not None and len(messages) < limits.max_messages:
+        curr_node = msg_nodes.setdefault(curr_msg.id, MsgNode())
 
-    register_help_command(discord_bot, state)
-    register_model_command(discord_bot, state)
-    register_status_commands(discord_bot, state)
-    register_abnt_command(discord_bot, state, httpx_client, user_has_permission)
-    register_peca_command(discord_bot, state, httpx_client, user_has_permission)
-    register_cronograma_command(discord_bot, state)
-    register_pesquisa_command(discord_bot, state, httpx_client, user_has_permission)
-    register_jurisprudencia_command(
-        discord_bot, state, httpx_client, user_has_permission
-    )
-    register_relatorio_command(discord_bot, state, httpx_client, user_has_permission)
-    register_regex_command(discord_bot, state)
-    register_sql_command(discord_bot, state, httpx_client)
-    register_json_command(discord_bot, state, httpx_client)
+        async with curr_node.lock:
+            if curr_node.text is None:
+                is_primary = curr_msg.id == new_msg.id or curr_msg.id == direct_reply_id
 
-    @discord_bot.event
-    async def on_ready() -> None:
-        if client_id := state.config.get("client_id"):
-            logging.info(
-                "\n\nBOT INVITE URL:\nhttps://discord.com/oauth2/authorize?client_id=%s&permissions=412317191168&scope=bot\n",
-                client_id,
-            )
-
-        await discord_bot.tree.sync()
-
-        start_status_scheduler(discord_bot)
-
-    @discord_bot.event
-    async def on_message(new_msg: discord.Message) -> None:
-        content = new_msg.content
-
-        if content.startswith(TRIGGER_PREFIX) and not new_msg.author.bot:
-            await _handle_trigger(new_msg, state, httpx_client)
-            return
-
-        bot_user = discord_bot.user
-        if bot_user is None:
-            return
-
-        if not should_process_message(new_msg, bot_user, msg_nodes):
-            return
-
-        if not user_has_permission(new_msg.author, new_msg.channel, state.config):
-            return
-
-        channel_lock = channel_locks.setdefault(new_msg.channel.id, asyncio.Lock())
-        if channel_lock.locked():
-            return
-
-        accept_images = any(
-            tag in state.curr_model.lower() for tag in VISION_MODEL_TAGS
-        )
-        max_text = state.config.get("max_text", 100000)
-        max_images = state.config.get("max_images", 5) if accept_images else 0
-        max_messages = state.config.get("max_messages", 25)
-
-        messages = []
-        user_warnings = set()
-        curr_msg = new_msg
-        direct_reply_id = new_msg.reference.message_id if new_msg.reference else None
-
-        while curr_msg is not None and len(messages) < max_messages:
-            curr_node = msg_nodes.setdefault(curr_msg.id, MsgNode())
-
-            async with curr_node.lock:
-                if curr_node.text is None:
-                    cleaned_content = curr_msg.content.removeprefix(
-                        bot_user.mention
-                    ).lstrip()
-
-                    if curr_msg.id == new_msg.id or curr_msg.id == direct_reply_id:
-                        max_attachment_kb = state.config.get("max_attachment_kb", 512)
-                        max_file_attachments = state.config.get(
-                            "max_file_attachments", 3
-                        )
-
-                        good_attachments = [
-                            att
-                            for att in curr_msg.attachments[:max_file_attachments]
-                            if (ct := att.content_type)
-                            and not any(
-                                ct.startswith(kind) for kind in ("audio/", "video/")
-                            )
-                            and (att.size / 1024) <= max_attachment_kb
-                        ]
-
-                        image_attachments = [
-                            att
-                            for att in good_attachments
-                            if (ct := att.content_type) and ct.startswith("image/")
-                        ]
-                        doc_attachments = [
-                            att
-                            for att in good_attachments
-                            if att not in image_attachments
-                        ]
-
-                        image_responses = await asyncio.gather(
-                            *[httpx_client.get(att.url) for att in image_attachments]
-                        )
-
-                        doc_texts: list[str] = []
-                        for att in doc_attachments:
-                            if (ct := att.content_type) and ct.startswith("text/"):
-                                resp = await httpx_client.get(att.url)
-                                text = resp.text
-                                doc_texts.append(
-                                    f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
-                                )
-                            else:
-                                try:
-                                    text = await read_attachment_text(att, httpx_client)
-                                    doc_texts.append(
-                                        f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
-                                    )
-                                except Exception:
-                                    pass
-                    else:
-                        good_attachments = []
-                        image_attachments = []
-                        image_responses = []
-                        doc_texts = []
-
-                    curr_node.role = (
-                        "assistant" if curr_msg.author == bot_user else "user"
+                if is_primary:
+                    att_result = await _process_attachments(
+                        curr_msg, limits, httpx_client
                     )
-
-                    curr_node.text = "\n".join(
-                        ([cleaned_content] if cleaned_content else [])
-                        + [
-                            "\n".join(
-                                filter(
-                                    None,
-                                    (embed.title, embed.description, embed.footer.text),
-                                )
-                            )
-                            for embed in curr_msg.embeds
-                        ]
-                        + [
-                            content
-                            for component in curr_msg.components
-                            if component.type == discord.ComponentType.text_display
-                            and isinstance(
-                                (content := getattr(component, "content", None)),
-                                str,  # type: ignore[no-any-return]
-                            )
-                        ]
-                        + doc_texts
-                    )
-
-                    curr_node.images = (
-                        [
-                            dict(
-                                type="image_url",
-                                image_url=dict(
-                                    url=f"data:{content_type};base64,{b64encode(resp.content).decode('utf-8')}"
-                                ),
-                            )
-                            for att, resp in zip(image_attachments, image_responses)
-                            if (content_type := att.content_type)
-                            and content_type.startswith("image")
-                        ]
-                        if curr_node.role == "user"
-                        else []
-                    )
-
-                    if curr_node.role == "user" and (
-                        curr_node.text or curr_node.images
-                    ):
-                        curr_node.text = f"<@{curr_msg.author.id}>: {curr_node.text}"
-
-                    if curr_msg.id == new_msg.id or curr_msg.id == direct_reply_id:
-                        curr_node.has_bad_attachments = len(curr_msg.attachments) > len(
-                            good_attachments
-                        )
-
-                    try:
-                        is_dm = curr_msg.channel.type == discord.ChannelType.private
-                        bot_mentioned = bot_user in curr_msg.mentions
-                        if (
-                            curr_msg.reference is None
-                            and (
-                                prev_msg_in_channel := (
-                                    [
-                                        message
-                                        async for message in curr_msg.channel.history(
-                                            before=curr_msg, limit=1
-                                        )
-                                    ]
-                                    or [None]
-                                )[0]
-                            )
-                            and prev_msg_in_channel.type
-                            in (discord.MessageType.default, discord.MessageType.reply)
-                            and (
-                                (
-                                    not bot_mentioned
-                                    and prev_msg_in_channel.author == curr_msg.author
-                                )
-                                or (
-                                    prev_msg_in_channel.author == bot_user
-                                    and (bot_mentioned or is_dm)
-                                )
-                            )
-                        ):
-                            curr_node.parent_msg = prev_msg_in_channel
-                        else:
-                            reference = curr_msg.reference
-                            if reference is not None and not isinstance(
-                                curr_msg.channel, discord.Thread
-                            ):
-                                parent_msg_id = reference.message_id
-                                if parent_msg_id is not None:
-                                    curr_node.parent_msg = (
-                                        reference.cached_message
-                                        or await curr_msg.channel.fetch_message(
-                                            parent_msg_id
-                                        )
-                                    )
-                            if isinstance(curr_msg.channel, discord.Thread):
-                                parent_is_thread_start = (
-                                    curr_msg.reference is None
-                                    and curr_msg.channel.parent is not None
-                                    and curr_msg.channel.parent.type
-                                    == discord.ChannelType.text
-                                )
-
-                                if parent_msg_id := (
-                                    curr_msg.channel.id
-                                    if parent_is_thread_start
-                                    else getattr(reference, "message_id", None)
-                                ):
-                                    if parent_is_thread_start:
-                                        parent_channel = curr_msg.channel.parent
-                                        assert parent_channel is not None
-                                        if isinstance(
-                                            parent_channel, discord.TextChannel
-                                        ):
-                                            curr_node.parent_msg = (
-                                                curr_msg.channel.starter_message
-                                                or await parent_channel.fetch_message(
-                                                    parent_msg_id
-                                                )
-                                            )
-                                        else:
-                                            curr_node.parent_msg = (
-                                                curr_msg.channel.starter_message
-                                            )
-                                    else:
-                                        curr_node.parent_msg = getattr(
-                                            reference, "cached_message", None
-                                        ) or await curr_msg.channel.fetch_message(
-                                            parent_msg_id
-                                        )
-
-                    except (discord.NotFound, discord.HTTPException):
-                        logging.debug(
-                            "Could not fetch parent message (channel=%s)",
-                            curr_msg.channel.id,
-                        )
-                        curr_node.fetch_parent_failed = True
-
-                if curr_node.images[:max_images]:
-                    content = [
-                        dict(type="text", text=curr_node.text[:max_text])
-                    ] + curr_node.images[:max_images]
                 else:
-                    content = curr_node.text[:max_text]
+                    att_result = AttachmentResult.empty()
 
-                if content != "":
-                    messages.append(dict(content=content, role=curr_node.role))
-
-                if len(curr_node.text) > max_text:
-                    user_warnings.add(f"⚠️ Max {max_text:,} characters per message")
-                if len(curr_node.images) > max_images:
-                    user_warnings.add(
-                        f"⚠️ Max {max_images} image{'' if max_images == 1 else 's'} per message"
-                        if max_images > 0
-                        else "⚠️ Can't see images"
-                    )
-                curr_msg = curr_node.parent_msg
-
-        logging.debug(
-            "Message received (user ID: %s, attachments: %s, conversation length: %s):\n%s",
-            new_msg.author.id,
-            len(new_msg.attachments),
-            len(messages),
-            new_msg.content,
-        )
-
-        now = datetime.now().astimezone()
-        system_prompt = (
-            (state.config.get("system_prompt") or "")
-            .replace("{date}", now.strftime("%B %d %Y"))
-            .replace("{time}", now.strftime("%H:%M:%S %Z%z"))
-        )
-        system_prompt += "\n\nSempre use ```language para code blocks (ex: ```python, ```javascript, ```bash)."
-        messages.append(dict(role="system", content=(system_prompt or "").strip()))
-
-        curr_content = finish_reason = None
-        response_msgs = []
-        response_contents = []
-
-        use_plain_responses = state.config.get("use_plain_responses", False)
-        response_embed: discord.Embed | None = None
-        if use_plain_responses:
-            max_message_length = 4000
-        else:
-            max_message_length = 4096 - len(STREAMING_INDICATOR)
-            response_embed = discord.Embed.from_dict(
-                dict(
-                    fields=[
-                        dict(name=warning, value="", inline=False)
-                        for warning in sorted(user_warnings)
-                    ]
+                _assemble_node_content(
+                    curr_msg, bot_user, curr_node, att_result, is_primary
                 )
+
+                await _resolve_parent_message(curr_msg, bot_user, curr_node)
+
+            node_text = curr_node.text
+            assert node_text is not None
+
+            content = node_text[: limits.max_text]
+
+            if content != "":
+                messages.append(dict(content=content, role=curr_node.role))
+
+            if len(node_text) > limits.max_text:
+                user_warnings.add(f"⚠️ Max {limits.max_text:,} characters per message")
+            curr_msg = curr_node.parent_msg
+
+    return messages, user_warnings
+
+
+def _build_system_prompt(config: dict[str, Any]) -> str:
+    now = datetime.now().astimezone()
+    system_prompt = (
+        (config.get("system_prompt") or "")
+        .replace("{date}", now.strftime("%B %d %Y"))
+        .replace("{time}", now.strftime("%H:%M:%S %Z%z"))
+    )
+    system_prompt += "\n\nSempre use ```language para code blocks (ex: ```python, ```javascript, ```bash)."
+    return (system_prompt or "").strip()
+
+
+async def _stream_and_send_response(
+    new_msg: discord.Message,
+    state: Any,
+    messages: list[dict[str, Any]],
+    user_warnings: set[str],
+    msg_nodes: dict[int, MsgNode],
+) -> None:
+    use_plain_responses = state.config.get("use_plain_responses", False)
+    response_embed: discord.Embed | None = None
+    if use_plain_responses:
+        max_message_length = PLAIN_RESPONSE_MAX_LENGTH
+    else:
+        max_message_length = EMBED_DESCRIPTION_MAX_LENGTH - len(STREAMING_INDICATOR)
+        response_embed = discord.Embed.from_dict(
+            dict(
+                fields=[
+                    dict(name=warning, value="", inline=False)
+                    for warning in sorted(user_warnings)
+                ]
+            )
+        )
+
+    curr_content = finish_reason = None
+    response_msgs: list[discord.Message] = []
+    response_contents: list[str] = []
+
+    request_started_at = datetime.now().timestamp()
+    first_chunk_logged = False
+
+    try:
+        logging.info(
+            "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
+            new_msg.author.id,
+            state.curr_model,
+            len(messages),
+            use_plain_responses,
+        )
+
+        typing_ctx = new_msg.channel.typing()
+        typing_active = False
+        try:
+            await typing_ctx.__aenter__()
+            typing_active = True
+        except discord.HTTPException as e:
+            if e.status != 429:
+                raise
+            logging.debug(
+                "Skipping typing indicator due to rate limit (channel=%s)",
+                new_msg.channel.id,
             )
 
-        async def reply_helper(**reply_kwargs: Any) -> None:
-            reply_target = new_msg if not response_msgs else response_msgs[-1]
-            response_msg = await reply_target.reply(**reply_kwargs)
-            response_msgs.append(response_msg)
+        try:
+            async for chunk, model_used in stream_chat_completion(
+                config=state.config,
+                model_name=state.curr_model,
+                messages=messages[::-1],
+            ):
+                if finish_reason is not None:
+                    break
 
-            msg_nodes[response_msg.id] = MsgNode(parent_msg=new_msg)
-            await msg_nodes[response_msg.id].lock.acquire()
+                if not (choice := chunk.choices[0] if chunk.choices else None):
+                    continue
 
-        request_started_at = datetime.now().timestamp()
-        first_chunk_logged = False
-        async with channel_lock:
-            try:
-                logging.info(
-                    "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
-                    new_msg.author.id,
-                    state.curr_model,
-                    len(messages),
-                    use_plain_responses,
+                finish_reason = choice.finish_reason
+                prev_content = curr_content or ""
+                curr_content = choice.delta.content or ""
+                new_content = (
+                    prev_content
+                    if finish_reason is None
+                    else (prev_content + curr_content)
                 )
 
-                typing_ctx = new_msg.channel.typing()
-                typing_active = False
-                try:
-                    await typing_ctx.__aenter__()
-                    typing_active = True
-                except discord.HTTPException as e:
-                    if e.status != 429:
-                        raise
-                    logging.debug(
-                        "Skipping typing indicator due to rate limit (channel=%s)",
-                        new_msg.channel.id,
-                    )
+                if response_contents == [] and new_content == "":
+                    continue
 
-                try:
-                    async for chunk, model_used in stream_chat_completion(
-                        config=state.config,
-                        model_name=state.curr_model,
-                        messages=messages[::-1],
-                    ):
-                        if finish_reason is not None:
-                            break
+                start_next_msg = (
+                    response_contents == []
+                    or len(response_contents[-1] + new_content) > max_message_length
+                )
+                if start_next_msg:
+                    response_contents.append("")
 
-                        if not (choice := chunk.choices[0] if chunk.choices else None):
-                            continue
-
-                        finish_reason = choice.finish_reason
-                        prev_content = curr_content or ""
-                        curr_content = choice.delta.content or ""
-                        new_content = (
-                            prev_content
-                            if finish_reason is None
-                            else (prev_content + curr_content)
-                        )
-
-                        if response_contents == [] and new_content == "":
-                            continue
-
-                        start_next_msg = (
-                            response_contents == []
-                            or len(response_contents[-1] + new_content)
-                            > max_message_length
-                        )
-                        if start_next_msg:
-                            response_contents.append("")
-
-                        response_contents[-1] += new_content
-                        if not first_chunk_logged and (
-                            new_content != "" or finish_reason is not None
-                        ):
-                            logging.info(
-                                "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
-                                new_msg.author.id,
-                                model_used,
-                                datetime.now().timestamp() - request_started_at,
-                            )
-                            first_chunk_logged = True
-
-                    if use_plain_responses:
-                        for content in response_contents:
-                            sanitized = sanitize_discord_markdown(content)
-                            await reply_helper(
-                                view=LayoutView().add_item(
-                                    TextDisplay(content=sanitized)
-                                )
-                            )
-                    else:
-                        assert response_embed is not None
-                        for content in response_contents:
-                            response_embed.description = sanitize_discord_markdown(
-                                content
-                            )
-                            response_embed.color = EMBED_COLOR_COMPLETE
-                            await reply_helper(embed=response_embed)
-
+                response_contents[-1] += new_content
+                if not first_chunk_logged and (
+                    new_content != "" or finish_reason is not None
+                ):
                     logging.info(
-                        "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                        "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
                         new_msg.author.id,
-                        state.curr_model,
-                        finish_reason,
-                        len(response_contents),
+                        model_used,
                         datetime.now().timestamp() - request_started_at,
                     )
+                    first_chunk_logged = True
 
-                finally:
-                    if typing_active:
-                        await typing_ctx.__aexit__(None, None, None)
-
-            except discord.DiscordServerError:
-                await new_msg.channel.send(
-                    "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
-                )
-                logging.exception(
-                    "Discord 503 error while generating response (user ID: %s, model: %s)",
-                    new_msg.author.id,
-                    state.curr_model,
-                )
-
-            except discord.HTTPException as e:
-                if e.status == 429:
-                    rl_headers = {
-                        k: e.response.headers.get(k)
-                        for k in (
-                            "X-RateLimit-Limit",
-                            "X-RateLimit-Remaining",
-                            "X-RateLimit-Reset",
-                            "X-RateLimit-Reset-After",
-                            "X-RateLimit-Scope",
-                            "Retry-After",
-                        )
-                    }
-                    logging.exception(
-                        "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
-                        new_msg.author.id,
-                        state.curr_model,
-                        rl_headers,
+            if use_plain_responses:
+                for content in response_contents:
+                    sanitized = sanitize_discord_markdown(content)
+                    await _send_response(
+                        new_msg,
+                        response_msgs,
+                        msg_nodes,
+                        view=LayoutView().add_item(TextDisplay(content=sanitized)),
                     )
-                else:
-                    logging.exception(
-                        "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
-                        e.status,
-                        new_msg.author.id,
-                        state.curr_model,
+            else:
+                assert response_embed is not None
+                for content in response_contents:
+                    response_embed.description = sanitize_discord_markdown(content)
+                    response_embed.color = EMBED_COLOR_COMPLETE
+                    await _send_response(
+                        new_msg, response_msgs, msg_nodes, embed=response_embed
                     )
 
+            logging.info(
+                "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                new_msg.author.id,
+                state.curr_model,
+                finish_reason,
+                len(response_contents),
+                datetime.now().timestamp() - request_started_at,
+            )
+
+        finally:
+            if typing_active:
+                await typing_ctx.__aexit__(None, None, None)
+
+    except discord.DiscordServerError:
+        await new_msg.channel.send(
+            "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
+        )
+        logging.exception(
+            "Discord 503 error while generating response (user ID: %s, model: %s)",
+            new_msg.author.id,
+            state.curr_model,
+        )
+
+    except discord.HTTPException as e:
+        if e.status == 429:
+            rl_headers = {
+                k: e.response.headers.get(k)
+                for k in (
+                    "X-RateLimit-Limit",
+                    "X-RateLimit-Remaining",
+                    "X-RateLimit-Reset",
+                    "X-RateLimit-Reset-After",
+                    "X-RateLimit-Scope",
+                    "Retry-After",
+                )
+            }
+            logging.exception(
+                "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
+                new_msg.author.id,
+                state.curr_model,
+                rl_headers,
+            )
+        else:
+            logging.exception(
+                "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
+                e.status,
+                new_msg.author.id,
+                state.curr_model,
+            )
+
+    except Exception:
+        logging.exception(
+            "Error while generating response (user ID: %s, model: %s)",
+            new_msg.author.id,
+            state.curr_model,
+        )
+
+    for response_msg in response_msgs:
+        msg_nodes[response_msg.id].text = "".join(response_contents)
+        msg_nodes[response_msg.id].lock.release()
+
+
+async def _evict_msg_nodes(msg_nodes: dict[int, MsgNode]) -> None:
+    if (num_nodes := len(msg_nodes)) > MAX_MESSAGE_NODES:
+        for msg_id in sorted(msg_nodes.keys())[: num_nodes - MAX_MESSAGE_NODES]:
+            async with msg_nodes.setdefault(msg_id, MsgNode()).lock:
+                msg_nodes.pop(msg_id, None)
+
+
+async def _process_attachments(
+    message: discord.Message,
+    limits: Limits,
+    httpx_client: httpx.AsyncClient,
+) -> AttachmentResult:
+    good_attachments = [
+        att
+        for att in message.attachments[: limits.max_file_attachments]
+        if (ct := att.content_type)
+        and not any(ct.startswith(kind) for kind in ("audio/", "video/", "image/"))
+        and (att.size / 1024) <= limits.max_attachment_kb
+    ]
+
+    doc_texts: list[str] = []
+    for att in good_attachments:
+        if (ct := att.content_type) and ct.startswith("text/"):
+            resp = await httpx_client.get(att.url)
+            text = resp.text
+            doc_texts.append(f"<file:{att.filename}>\n{text}\n</file:{att.filename}>")
+        else:
+            try:
+                text = await read_attachment_text(att, httpx_client)
+                doc_texts.append(
+                    f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
+                )
             except Exception:
-                logging.exception(
-                    "Error while generating response (user ID: %s, model: %s)",
-                    new_msg.author.id,
-                    state.curr_model,
+                pass
+
+    return AttachmentResult(
+        good_attachments=good_attachments,
+        doc_texts=doc_texts,
+        has_bad_attachments=len(message.attachments) > len(good_attachments),
+    )
+
+
+def _assemble_node_content(
+    message: discord.Message,
+    bot_user: discord.ClientUser,
+    curr_node: MsgNode,
+    att_result: AttachmentResult,
+    is_primary: bool,
+) -> None:
+    curr_node.role = "assistant" if message.author == bot_user else "user"
+
+    text = _extract_message_text(message, bot_user, att_result.doc_texts)
+
+    if curr_node.role == "user" and text:
+        text = f"<@{message.author.id}>: {text}"
+
+    curr_node.text = text
+
+    if is_primary:
+        curr_node.has_bad_attachments = att_result.has_bad_attachments
+
+
+async def _resolve_parent_message(
+    curr_msg: discord.Message,
+    bot_user: discord.ClientUser,
+    curr_node: MsgNode,
+) -> None:
+    try:
+        is_dm = curr_msg.channel.type == discord.ChannelType.private
+        bot_mentioned = bot_user in curr_msg.mentions
+
+        if (
+            curr_msg.reference is None
+            and (
+                prev_msg_in_channel := (
+                    [
+                        message
+                        async for message in curr_msg.channel.history(
+                            before=curr_msg, limit=1
+                        )
+                    ]
+                    or [None]
+                )[0]
+            )
+            and prev_msg_in_channel.type
+            in (discord.MessageType.default, discord.MessageType.reply)
+            and (
+                (not bot_mentioned and prev_msg_in_channel.author == curr_msg.author)
+                or (prev_msg_in_channel.author == bot_user and (bot_mentioned or is_dm))
+            )
+        ):
+            curr_node.parent_msg = prev_msg_in_channel
+        else:
+            reference = curr_msg.reference
+            if reference is not None and not isinstance(
+                curr_msg.channel, discord.Thread
+            ):
+                parent_msg_id = reference.message_id
+                if parent_msg_id is not None:
+                    curr_node.parent_msg = (
+                        reference.cached_message
+                        or await curr_msg.channel.fetch_message(parent_msg_id)
+                    )
+            if isinstance(curr_msg.channel, discord.Thread):
+                parent_is_thread_start = (
+                    curr_msg.reference is None
+                    and curr_msg.channel.parent is not None
+                    and curr_msg.channel.parent.type == discord.ChannelType.text
                 )
 
-        for response_msg in response_msgs:
-            msg_nodes[response_msg.id].text = "".join(response_contents)
-            msg_nodes[response_msg.id].lock.release()
+                if parent_msg_id := (
+                    curr_msg.channel.id
+                    if parent_is_thread_start
+                    else getattr(reference, "message_id", None)
+                ):
+                    if parent_is_thread_start:
+                        parent_channel = curr_msg.channel.parent
+                        assert parent_channel is not None
+                        if isinstance(parent_channel, discord.TextChannel):
+                            curr_node.parent_msg = (
+                                curr_msg.channel.starter_message
+                                or await parent_channel.fetch_message(parent_msg_id)
+                            )
+                        else:
+                            curr_node.parent_msg = curr_msg.channel.starter_message
+                    else:
+                        curr_node.parent_msg = getattr(
+                            reference, "cached_message", None
+                        ) or await curr_msg.channel.fetch_message(parent_msg_id)
 
-        if (num_nodes := len(msg_nodes)) > MAX_MESSAGE_NODES:
-            for msg_id in sorted(msg_nodes.keys())[: num_nodes - MAX_MESSAGE_NODES]:
-                async with msg_nodes.setdefault(msg_id, MsgNode()).lock:
-                    msg_nodes.pop(msg_id, None)
+    except (discord.NotFound, discord.HTTPException):
+        logging.debug(
+            "Could not fetch parent message (channel=%s)",
+            curr_msg.channel.id,
+        )
+        curr_node.fetch_parent_failed = True
 
-    return discord_bot
+
+async def _send_response(
+    trigger_msg: discord.Message,
+    response_msgs: list[discord.Message],
+    msg_nodes: dict[int, MsgNode],
+    **reply_kwargs: Any,
+) -> None:
+    reply_target = trigger_msg if not response_msgs else response_msgs[-1]
+    response_msg = await reply_target.reply(**reply_kwargs)
+    response_msgs.append(response_msg)
+
+    msg_nodes[response_msg.id] = MsgNode(parent_msg=trigger_msg)
+    await msg_nodes[response_msg.id].lock.acquire()
+
+
+def _extract_message_text(
+    message: discord.Message,
+    bot_user: discord.ClientUser,
+    doc_texts: list[str],
+) -> str:
+    cleaned_content = message.content.removeprefix(bot_user.mention).lstrip()
+
+    embed_texts = [
+        "\n".join(
+            filter(
+                None,
+                (embed.title, embed.description, embed.footer.text),
+            )
+        )
+        for embed in message.embeds
+    ]
+
+    component_texts = [
+        content
+        for component in message.components
+        if component.type == discord.ComponentType.text_display
+        and isinstance(
+            (content := getattr(component, "content", None)),
+            str,  # type: ignore[no-any-return]
+        )
+    ]
+
+    return "\n".join(
+        ([cleaned_content] if cleaned_content else [])
+        + embed_texts
+        + component_texts
+        + doc_texts
+    )

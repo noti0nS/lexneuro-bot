@@ -28,6 +28,9 @@ EDIT_DELAY_SECONDS = 1
 
 MAX_MESSAGE_NODES = 500
 
+PLAIN_RESPONSE_MAX_LENGTH = 4000
+EMBED_DESCRIPTION_MAX_LENGTH = 4096
+
 SUPPORTED_WORD_ATTACHMENT_EXTENSIONS = (".docx", ".odt")
 SUPPORTED_WORD_CONTENT_TYPES = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
