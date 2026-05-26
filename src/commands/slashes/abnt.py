@@ -7,7 +7,6 @@ from typing import Any
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
@@ -15,7 +14,11 @@ from ...helpers.attachments import (
     attachment_is_supported_word_document,
     read_word_attachment,
 )
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
 from ...prompts import build_abnt_messages
 
 
@@ -165,43 +168,48 @@ def register_abnt_command(
         raw_output = ""
         request_started_at = datetime.now().timestamp()
         try:
-            messages = build_abnt_messages(
-                filename=document.filename,
-                document_text=document_text,
-                instructions=instructions,
-                document_was_truncated=document_was_truncated,
-                max_document_chars=max_document_chars,
-            )
-            logging.info(
-                "ABNT LLM request started (user ID: %s, model: %s, file: %s, message_count: %s)",
-                interaction.user.id,
-                state.curr_model,
-                document.filename,
-                len(messages),
-            )
-            completion_task = asyncio.create_task(
-                execute_chat_completion(
-                    config=state.config,
-                    model_name=state.curr_model,
-                    messages=messages,
+            async with llm_error_handling(interaction, "ABNT"):
+                messages = build_abnt_messages(
+                    filename=document.filename,
+                    document_text=document_text,
+                    instructions=instructions,
+                    document_was_truncated=document_was_truncated,
+                    max_document_chars=max_document_chars,
                 )
-            )
-            completion = await await_task_with_heartbeats(
-                completion_task,
-                (
-                    "ABNT LLM request still running "
-                    f"(user ID: {interaction.user.id}, model: {state.curr_model}, file: {document.filename})"
-                ),
-            )
-            elapsed = datetime.now().timestamp() - request_started_at
-            logging.info(
-                "ABNT LLM request completed (user ID: %s, model: %s, file: %s, elapsed: %.2fs)",
-                interaction.user.id,
-                state.curr_model,
-                document.filename,
-                elapsed,
-            )
-            raw_output = get_completion_text(completion)
+                logging.info(
+                    "ABNT LLM request started (user ID: %s, model: %s, file: %s, message_count: %s)",
+                    interaction.user.id,
+                    state.curr_model,
+                    document.filename,
+                    len(messages),
+                )
+                completion_task = asyncio.create_task(
+                    execute_chat_completion(
+                        config=state.config,
+                        model_name=state.curr_model,
+                        messages=messages,
+                    )
+                )
+                completion = await await_task_with_heartbeats(
+                    completion_task,
+                    (
+                        "ABNT LLM request still running "
+                        f"(user ID: {interaction.user.id}, model: {state.curr_model}, file: {document.filename})"
+                    ),
+                )
+                elapsed = datetime.now().timestamp() - request_started_at
+                logging.info(
+                    "ABNT LLM request completed (user ID: %s, model: %s, file: %s, elapsed: %.2fs)",
+                    interaction.user.id,
+                    state.curr_model,
+                    document.filename,
+                    elapsed,
+                )
+                raw_output = get_completion_text(completion)
+        except LLMAborted:
+            return
+
+        try:
             score, improvements = parse_abnt_evaluation_json(raw_output)
             output = build_abnt_result_message(score, improvements)
             logging.info(
@@ -221,21 +229,6 @@ def register_abnt_command(
             )
             await interaction.followup.send(
                 "Não consegui interpretar a avaliação ABNT do provedor. Tente novamente em alguns instantes."
-            )
-            return
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating ABNT response: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                f"O provedor do modelo interrompeu a avaliação ABNT. Detalhe do provedor: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating ABNT response")
-            await interaction.followup.send(
-                "Não consegui avaliar o documento em ABNT agora. Verifique os logs do provedor/modelo e tente novamente."
             )
             return
 

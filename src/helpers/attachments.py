@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -97,3 +98,37 @@ async def read_word_attachment(
     text = processor.extract_text(response.content)
 
     return text[:max_chars], len(text) > max_chars
+
+
+async def download_attachment_text(
+    httpx_client: httpx.AsyncClient,
+    attachment: discord.Attachment,
+    interaction: discord.Interaction,
+) -> str | None:
+    """Download attachment content as text.
+
+    Returns the text on success, or None if an error occurred
+    (error message already sent to the user).
+    """
+    try:
+        response = await httpx_client.get(attachment.url)
+        response.raise_for_status()
+    except Exception:
+        logging.exception(
+            "File download failed (user ID: %s, file: %s)",
+            interaction.user.id,
+            attachment.filename,
+        )
+        await interaction.response.send_message(
+            "Não consegui baixar o anexo. Tente novamente.", ephemeral=True
+        )
+        return None
+
+    text = response.text.strip()
+    if not text:
+        await interaction.response.send_message(
+            "O arquivo parece estar vazio.", ephemeral=True
+        )
+        return None
+
+    return text

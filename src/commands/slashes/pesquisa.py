@@ -1,18 +1,14 @@
 import asyncio
 import logging
-import re
 from datetime import datetime
 from typing import Any
 
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
-
 
 from ...helpers.ai_tools import (
     ALL_RESEARCH_TOOLS,
-    ContentFilterError,
     DocumentToolSetup,
     run_research_loop,
     setup_document_tools,
@@ -22,9 +18,13 @@ from ...helpers.attachments import (
     DocumentChunks,
     attachment_is_supported,
 )
-from ...helpers.content import get_completion_text
+from ...helpers.content import build_filename, get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
 from ...helpers.send import send_document_result
 from ...prompts.pesquisa import (
     EXTENSAO_LABELS,
@@ -40,15 +40,6 @@ EXTENSAO_CHOICES = [
         name="Dossiê Completo (5+ págs. / 2.500+w)", value="completo"
     ),
 ]
-
-
-def build_pesquisa_filename(tema: str, user_id: int, ext: str) -> str:
-    safe_tema = re.sub(r"[^\w\s-]", "", tema).strip().lower()
-    safe_tema = re.sub(r"[-\s]+", "_", safe_tema) or "pesquisa"
-    if len(safe_tema) > 60:
-        safe_tema = safe_tema[:60]
-    epoch = int(datetime.now().timestamp())
-    return f"pesquisa_{safe_tema}_{user_id}_{epoch}{ext}"
 
 
 def register_pesquisa_command(
@@ -196,108 +187,88 @@ def register_pesquisa_command(
         request_started_at = datetime.now().timestamp()
 
         try:
-            # Phase 1: Refinement (self-Q&A) — optional pre-generation step
-            if refinement_enabled:
-                saved_len = len(messages)
-                messages.append(
-                    {"role": "user", "content": build_refinement_message(dominio)}
+            async with llm_error_handling(interaction, "Pesquisa"):
+                # Phase 1: Refinement (self-Q&A) — optional pre-generation step
+                if refinement_enabled:
+                    saved_len = len(messages)
+                    messages.append(
+                        {"role": "user", "content": build_refinement_message(dominio)}
+                    )
+
+                    logging.info(
+                        "Pesquisa refinement started (user ID: %s, model: %s)",
+                        interaction.user.id,
+                        curr_model,
+                    )
+
+                    refinement_task = asyncio.create_task(
+                        execute_chat_completion(
+                            config=state.config,
+                            model_name=curr_model,
+                            messages=messages,
+                            tool_choice="none",
+                            reasoning_effort=reasoning_effort,
+                        )
+                    )
+                    refinement_completion = await await_task_with_heartbeats(
+                        refinement_task,
+                        f"Pesquisa refinement still running (user ID: {interaction.user.id}, model: {curr_model})",
+                    )
+                    refinement_text = get_completion_text(refinement_completion)
+
+                    if refinement_text.strip():
+                        messages.append(
+                            {"role": "assistant", "content": refinement_text}
+                        )
+                        logging.info(
+                            "Pesquisa refinement completed (user ID: %s, length: %s)",
+                            interaction.user.id,
+                            len(refinement_text),
+                        )
+                        extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Análise concluída. Agora prossiga com a pesquisa web e "
+                                    f"redija o documento com exatamente {paginas} página(s) — nem menos, nem mais "
+                                    f"({extensao_label}). Use as ferramentas de busca para reunir "
+                                    "fontes antes de redigir.\n\n"
+                                    "IMPORTANTE: Comece diretamente pelo conteúdo do documento. "
+                                    'Não inclua introduções como "Aqui está o documento" — '
+                                    "seu output deve iniciar com o título ou primeiro parágrafo."
+                                ),
+                            }
+                        )
+                    else:
+                        logging.warning(
+                            "Pesquisa refinement returned empty output (user ID: %s)",
+                            interaction.user.id,
+                        )
+                        del messages[saved_len:]
+
+                # Phase 2: Research & generation (tool-calling loop)
+                raw_output = await run_research_loop(
+                    config=state.config,
+                    model_name=curr_model,
+                    messages=messages,
+                    max_iterations=max_iterations,
+                    search_results_per_topic=search_results_count,
+                    max_page_fetches=max_pages,
+                    reasoning_effort=reasoning_effort,
+                    user_id=interaction.user.id,
+                    tools=extended_tools,
+                    on_extra_tool=on_extra_tool,
                 )
 
+                elapsed = datetime.now().timestamp() - request_started_at
                 logging.info(
-                    "Pesquisa refinement started (user ID: %s, model: %s)",
+                    "Pesquisa LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     curr_model,
+                    elapsed,
                 )
-
-                refinement_task = asyncio.create_task(
-                    execute_chat_completion(
-                        config=state.config,
-                        model_name=curr_model,
-                        messages=messages,
-                        tool_choice="none",
-                        reasoning_effort=reasoning_effort,
-                    )
-                )
-                refinement_completion = await await_task_with_heartbeats(
-                    refinement_task,
-                    f"Pesquisa refinement still running (user ID: {interaction.user.id}, model: {curr_model})",
-                )
-                refinement_text = get_completion_text(refinement_completion)
-
-                if refinement_text.strip():
-                    messages.append({"role": "assistant", "content": refinement_text})
-                    logging.info(
-                        "Pesquisa refinement completed (user ID: %s, length: %s)",
-                        interaction.user.id,
-                        len(refinement_text),
-                    )
-                    extensao_label = EXTENSAO_LABELS.get(extensao, extensao)
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "Análise concluída. Agora prossiga com a pesquisa web e "
-                                f"redija o documento com exatamente {paginas} página(s) — nem menos, nem mais "
-                                f"({extensao_label}). Use as ferramentas de busca para reunir "
-                                "fontes antes de redigir.\n\n"
-                                "IMPORTANTE: Comece diretamente pelo conteúdo do documento. "
-                                'Não inclua introduções como "Aqui está o documento" — '
-                                "seu output deve iniciar com o título ou primeiro parágrafo."
-                            ),
-                        }
-                    )
-                else:
-                    logging.warning(
-                        "Pesquisa refinement returned empty output (user ID: %s)",
-                        interaction.user.id,
-                    )
-                    del messages[saved_len:]
-
-            # Phase 2: Research & generation (tool-calling loop)
-            raw_output = await run_research_loop(
-                config=state.config,
-                model_name=curr_model,
-                messages=messages,
-                max_iterations=max_iterations,
-                search_results_per_topic=search_results_count,
-                max_page_fetches=max_pages,
-                reasoning_effort=reasoning_effort,
-                user_id=interaction.user.id,
-                tools=extended_tools,
-                on_extra_tool=on_extra_tool,
-            )
-
-            elapsed = datetime.now().timestamp() - request_started_at
-            logging.info(
-                "Pesquisa LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
-                interaction.user.id,
-                curr_model,
-                elapsed,
-            )
-
-        except ContentFilterError as exc:
-            logging.error(
-                "Pesquisa LLM content filter triggered (user ID: %s)",
-                interaction.user.id,
-            )
-            await interaction.followup.send(str(exc))
-            return
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating pesquisa: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                "O provedor do modelo interrompeu a geração do documento. "
-                + f"Detalhe do provedor: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating pesquisa document")
-            await interaction.followup.send(
-                "Não consegui gerar o documento de pesquisa agora. "
-                + "Verifique os logs e tente novamente."
-            )
+        except LLMAborted:
             return
 
         if not raw_output.strip():
@@ -309,7 +280,7 @@ def register_pesquisa_command(
         # Generate document file
         try:
             file_bytes, ext = generate_document(raw_output, tema, formato_valor)
-            filename = build_pesquisa_filename(tema, interaction.user.id, ext)
+            filename = build_filename("pesquisa", tema, interaction.user.id, ext)
         except Exception:
             logging.exception("Error while generating document file")
             await interaction.followup.send(

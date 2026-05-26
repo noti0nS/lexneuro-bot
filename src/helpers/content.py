@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Any
 
 _CODEHOLDER = "\x00"
@@ -30,6 +31,17 @@ def get_completion_text(completion: Any) -> str:
         return "".join(chunks).strip()
 
     return str(content).strip()
+
+
+def build_filename(
+    prefix: str, raw_text: str, user_id: int, ext: str, *, max_len: int = 60
+) -> str:
+    safe = re.sub(r"[^\w\s-]", "", raw_text).strip().lower()
+    safe = re.sub(r"[-\s]+", "_", safe) or prefix
+    if len(safe) > max_len:
+        safe = safe[:max_len]
+    epoch = int(datetime.now().timestamp())
+    return f"{prefix}_{safe}_{user_id}_{epoch}{ext}"
 
 
 def sanitize_discord_markdown(text: str) -> str:

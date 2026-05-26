@@ -4,6 +4,27 @@ from typing import cast
 import discord
 
 
+async def send_followup_chunked(
+    interaction: discord.Interaction, text: str, *, max_len: int = 2000
+) -> None:
+    if len(text) <= max_len:
+        await interaction.followup.send(text)
+        return
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > max_len:
+        split_at = remaining.rfind("\n", 0, max_len)
+        if split_at == -1:
+            split_at = max_len
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    for chunk in chunks:
+        await interaction.followup.send(chunk)
+
+
 async def send_document_result(
     interaction: discord.Interaction,
     content: str,

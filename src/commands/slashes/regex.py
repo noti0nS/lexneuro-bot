@@ -1,15 +1,20 @@
-import asyncio
 import logging
 from typing import Any
 
 import discord
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.content import get_completion_text
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
+from ...helpers.send import send_followup_chunked
 from ...prompts.regex import build_regex_messages
+
+import asyncio
 
 
 def register_regex_command(
@@ -50,64 +55,38 @@ def register_regex_command(
 
         raw_output = ""
         try:
-            messages = build_regex_messages(
-                descricao=descricao.strip(),
-                exemplos=exemplos.strip() if exemplos else None,
-                linguagem=linguagem,
-            )
-            logging.info(
-                "Regex LLM request started (user ID: %s, model: %s)",
-                interaction.user.id,
-                state.curr_model,
-            )
-            completion_task = asyncio.create_task(
-                execute_chat_completion(
-                    config=state.config,
-                    model_name=state.curr_model,
-                    messages=messages,
+            async with llm_error_handling(interaction, "Regex"):
+                messages = build_regex_messages(
+                    descricao=descricao.strip(),
+                    exemplos=exemplos.strip() if exemplos else None,
+                    linguagem=linguagem,
                 )
-            )
-            completion = await await_task_with_heartbeats(
-                completion_task,
-                f"Regex LLM request still running (user ID: {interaction.user.id})",
-            )
-            raw_output = get_completion_text(completion)
-            logging.info(
-                "Regex LLM request completed (user ID: %s)",
-                interaction.user.id,
-            )
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating regex: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                f"O provedor do modelo interrompeu a geração. Detalhe: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating regex")
-            await interaction.followup.send(
-                "Não consegui gerar a regex agora. Tente novamente."
-            )
+                logging.info(
+                    "Regex LLM request started (user ID: %s, model: %s)",
+                    interaction.user.id,
+                    state.curr_model,
+                )
+                completion_task = asyncio.create_task(
+                    execute_chat_completion(
+                        config=state.config,
+                        model_name=state.curr_model,
+                        messages=messages,
+                    )
+                )
+                completion = await await_task_with_heartbeats(
+                    completion_task,
+                    f"Regex LLM request still running (user ID: {interaction.user.id})",
+                )
+                raw_output = get_completion_text(completion)
+                logging.info(
+                    "Regex LLM request completed (user ID: %s)",
+                    interaction.user.id,
+                )
+        except LLMAborted:
             return
 
         if not raw_output:
             await interaction.followup.send("Não foi possível gerar a regex.")
             return
 
-        if len(raw_output) <= 2000:
-            await interaction.followup.send(raw_output)
-        else:
-            chunks: list[str] = []
-            remaining = raw_output
-            while len(remaining) > 2000:
-                split_at = remaining.rfind("\n", 0, 2000)
-                if split_at == -1:
-                    split_at = 2000
-                chunks.append(remaining[:split_at])
-                remaining = remaining[split_at:].lstrip()
-            if remaining:
-                chunks.append(remaining)
-            for chunk in chunks:
-                await interaction.followup.send(chunk)
+        await send_followup_chunked(interaction, raw_output)

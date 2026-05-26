@@ -5,11 +5,16 @@ from typing import Any
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.async_utils import await_task_with_heartbeats
+from ...helpers.attachments import download_attachment_text
 from ...helpers.content import get_completion_text
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
+from ...helpers.send import send_followup_chunked
 from ...prompts.sql_cmd import build_sql_messages
 
 DIALETO_SQL_CHOICES = [
@@ -76,31 +81,10 @@ def register_sql_command(
                 )
                 return
 
-            logging.info(
-                "SQL file download started (user ID: %s, file: %s)",
-                interaction.user.id,
-                arquivo.filename,
+            file_text = await download_attachment_text(
+                httpx_client, arquivo, interaction
             )
-            try:
-                response = await httpx_client.get(arquivo.url)
-                response.raise_for_status()
-            except Exception:
-                logging.exception(
-                    "SQL file download failed (user ID: %s, file: %s)",
-                    interaction.user.id,
-                    arquivo.filename,
-                )
-                await interaction.response.send_message(
-                    "Não consegui baixar o anexo. Tente novamente.",
-                    ephemeral=True,
-                )
-                return
-
-            file_text = response.text.strip()
-            if not file_text:
-                await interaction.response.send_message(
-                    "O arquivo parece estar vazio.", ephemeral=True
-                )
+            if file_text is None:
                 return
 
             if sql_text:
@@ -137,63 +121,37 @@ def register_sql_command(
 
         raw_output = ""
         try:
-            messages = build_sql_messages(
-                consulta=sql_text,
-                dialeto=dialeto_valor,
-            )
-            logging.info(
-                "SQL LLM request started (user ID: %s, model: %s)",
-                interaction.user.id,
-                state.curr_model,
-            )
-            completion_task = asyncio.create_task(
-                execute_chat_completion(
-                    config=state.config,
-                    model_name=state.curr_model,
-                    messages=messages,
+            async with llm_error_handling(interaction, "SQL"):
+                messages = build_sql_messages(
+                    consulta=sql_text,
+                    dialeto=dialeto_valor,
                 )
-            )
-            completion = await await_task_with_heartbeats(
-                completion_task,
-                f"SQL LLM request still running (user ID: {interaction.user.id})",
-            )
-            raw_output = get_completion_text(completion)
-            logging.info(
-                "SQL LLM request completed (user ID: %s)",
-                interaction.user.id,
-            )
-        except APIError as exc:
-            logging.exception(
-                "Provider error while analyzing SQL: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                f"O provedor do modelo interrompeu a análise. Detalhe: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while analyzing SQL")
-            await interaction.followup.send(
-                "Não consegui analisar a SQL agora. Tente novamente."
-            )
+                logging.info(
+                    "SQL LLM request started (user ID: %s, model: %s)",
+                    interaction.user.id,
+                    state.curr_model,
+                )
+                completion_task = asyncio.create_task(
+                    execute_chat_completion(
+                        config=state.config,
+                        model_name=state.curr_model,
+                        messages=messages,
+                    )
+                )
+                completion = await await_task_with_heartbeats(
+                    completion_task,
+                    f"SQL LLM request still running (user ID: {interaction.user.id})",
+                )
+                raw_output = get_completion_text(completion)
+                logging.info(
+                    "SQL LLM request completed (user ID: %s)",
+                    interaction.user.id,
+                )
+        except LLMAborted:
             return
 
         if not raw_output:
             await interaction.followup.send("Não foi possível analisar a SQL.")
             return
 
-        if len(raw_output) <= 2000:
-            await interaction.followup.send(raw_output)
-        else:
-            chunks: list[str] = []
-            remaining = raw_output
-            while len(remaining) > 2000:
-                split_at = remaining.rfind("\n", 0, 2000)
-                if split_at == -1:
-                    split_at = 2000
-                chunks.append(remaining[:split_at])
-                remaining = remaining[split_at:].lstrip()
-            if remaining:
-                chunks.append(remaining)
-            for chunk in chunks:
-                await interaction.followup.send(chunk)
+        await send_followup_chunked(interaction, raw_output)

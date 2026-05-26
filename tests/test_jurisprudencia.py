@@ -2,9 +2,9 @@ import inspect
 
 from src.commands.slashes.jurisprudencia import (
     TRIBUNAL_CHOICES,
-    build_jurisprudencia_filename,
 )
 from src.helpers.ai_tools import ALL_RESEARCH_TOOLS
+from src.helpers.content import build_filename
 from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.jurisprudencia import (
     JURISPRUDENCIA_SYSTEM_PROMPT,
@@ -129,7 +129,9 @@ def test_tool_schemas_valid_openai_format() -> None:
 
 
 def test_build_jurisprudencia_filename() -> None:
-    filename = build_jurisprudencia_filename("prescrição intercorrente", 123, ".docx")
+    filename = build_filename(
+        "jurisprudencia", "prescrição intercorrente", 123, ".docx", max_len=40
+    )
     assert filename.startswith("jurisprudencia_")
     assert "prescri" in filename and "intercorrente" in filename
     assert "_123_" in filename
@@ -138,13 +140,15 @@ def test_build_jurisprudencia_filename() -> None:
 
 def test_build_jurisprudencia_filename_truncation() -> None:
     long_name = "a" * 80
-    filename = build_jurisprudencia_filename(long_name, 1, ".docx")
+    filename = build_filename("jurisprudencia", long_name, 1, ".docx", max_len=40)
     safe_part = filename.split("_")[1]
     assert len(safe_part) <= 40
 
 
 def test_build_jurisprudencia_filename_special_chars() -> None:
-    filename = build_jurisprudencia_filename("ação & recurso!", 456, ".docx")
+    filename = build_filename(
+        "jurisprudencia", "ação & recurso!", 456, ".docx", max_len=40
+    )
     assert "_recurso" in filename
     assert "&" not in filename
     assert "!" not in filename

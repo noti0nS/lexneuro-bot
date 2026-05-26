@@ -1,4 +1,5 @@
-from src.commands.slashes.pesquisa import EXTENSAO_CHOICES, build_pesquisa_filename
+from src.commands.slashes.pesquisa import EXTENSAO_CHOICES
+from src.helpers.content import build_filename
 from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.pesquisa import (
     EXTENSAO_LABELS,
@@ -181,21 +182,23 @@ def test_build_pesquisa_messages_legal_topic_has_correct_domain() -> None:
 
 
 def test_build_pesquisa_filename_docx() -> None:
-    filename = build_pesquisa_filename("competência FGTS", user_id=123456, ext=".docx")
+    filename = build_filename(
+        "pesquisa", "competência FGTS", user_id=123456, ext=".docx"
+    )
     assert filename.startswith("pesquisa_")
     assert filename.endswith(".docx")
     assert "_123456_" in filename
 
 
 def test_build_pesquisa_filename_odt() -> None:
-    filename = build_pesquisa_filename("test topic", user_id=789, ext=".odt")
+    filename = build_filename("pesquisa", "test topic", user_id=789, ext=".odt")
     assert "_789_" in filename
     assert filename.endswith(".odt")
 
 
 def test_build_pesquisa_filename_sanitizes_special_chars() -> None:
-    filename = build_pesquisa_filename(
-        "alvará judicial @#$% 123", user_id=5, ext=".docx"
+    filename = build_filename(
+        "pesquisa", "alvará judicial @#$% 123", user_id=5, ext=".docx"
     )
     assert "@" not in filename
     assert "#" not in filename

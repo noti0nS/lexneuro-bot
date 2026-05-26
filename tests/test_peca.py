@@ -6,12 +6,12 @@ import discord
 from src.commands.slashes.peca import (
     AREA_CHOICES,
     TIPO_CHOICES,
-    build_peca_filename,
     filter_choices,
     area_autocomplete,
     tipo_autocomplete,
 )
 from src.helpers.attachments import attachment_is_supported
+from src.helpers.content import build_filename
 from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.peca import PECA_SYSTEM_PROMPT, build_peca_messages
 
@@ -102,32 +102,32 @@ def test_system_prompt_no_generic_titles() -> None:
 
 
 def test_build_peca_filename_docx() -> None:
-    filename = build_peca_filename("Substabelecimento", user_id=123456, ext=".docx")
+    filename = build_filename("peca", "Substabelecimento", user_id=123456, ext=".docx")
     assert filename.startswith("peca_substabelecimento_123456_")
     assert filename.endswith(".docx")
 
 
 def test_build_peca_filename_pdf() -> None:
-    filename = build_peca_filename("Contestação", user_id=789, ext=".pdf")
+    filename = build_filename("peca", "Contestação", user_id=789, ext=".pdf")
     assert "peca_contesta" in filename
     assert "_789_" in filename
     assert filename.endswith(".pdf")
 
 
 def test_build_peca_filename_odt() -> None:
-    filename = build_peca_filename("Alvará", user_id=42, ext=".odt")
+    filename = build_filename("peca", "Alvará", user_id=42, ext=".odt")
     assert "_42_" in filename
     assert filename.endswith(".odt")
 
 
 def test_build_peca_filename_none_tipo_fallback() -> None:
-    filename = build_peca_filename(None, user_id=1, ext=".docx")
+    filename = build_filename("peca", "peca", user_id=1, ext=".docx")
     assert filename.startswith("peca_peca_1_")
     assert filename.endswith(".docx")
 
 
 def test_build_peca_filename_sanitizes_special_chars() -> None:
-    filename = build_peca_filename("ação @#$% 123", user_id=5, ext=".docx")
+    filename = build_filename("peca", "ação @#$% 123", user_id=5, ext=".docx")
     assert "@" not in filename
     assert "#" not in filename
     assert "$" not in filename

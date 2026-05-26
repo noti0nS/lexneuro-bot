@@ -1,16 +1,12 @@
 import logging
-import re
-from datetime import datetime
 from typing import Any
 
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.ai_tools import (
     ALL_RESEARCH_TOOLS,
-    ContentFilterError,
     DocumentToolSetup,
     run_research_loop,
     setup_document_tools,
@@ -19,8 +15,9 @@ from ...helpers.attachments import (
     DocumentChunks,
     attachment_is_supported,
 )
+from ...helpers.content import build_filename
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import get_provider_error_detail
+from ...helpers.llm import LLMAborted, llm_error_handling
 from ...helpers.send import send_document_result
 from ...prompts.jurisprudencia import build_jurisprudencia_messages
 
@@ -37,15 +34,6 @@ TRIBUNAL_CHOICES = [
     discord.app_commands.Choice(name="TJSP — Tribunal de Justiça de SP", value="tjsp"),
     discord.app_commands.Choice(name="TJRJ — Tribunal de Justiça do RJ", value="tjRJ"),
 ]
-
-
-def build_jurisprudencia_filename(consulta: str, user_id: int, ext: str) -> str:
-    safe_consulta = re.sub(r"[^\w\s-]", "", consulta).strip().lower()
-    safe_consulta = re.sub(r"[-\s]+", "_", safe_consulta) or "jurisprudencia"
-    if len(safe_consulta) > 40:
-        safe_consulta = safe_consulta[:40]
-    epoch = int(datetime.now().timestamp())
-    return f"jurisprudencia_{safe_consulta}_{user_id}_{epoch}{ext}"
 
 
 def register_jurisprudencia_command(
@@ -171,45 +159,25 @@ def register_jurisprudencia_command(
         curr_model = jur_model if jur_model else state.curr_model
 
         try:
-            raw_output = await run_research_loop(
-                config=state.config,
-                model_name=curr_model,
-                messages=messages,
-                max_iterations=max_iterations,
-                search_results_per_topic=search_results_count,
-                max_page_fetches=max_pages,
-                user_id=interaction.user.id,
-                tools=extended_tools,
-                on_extra_tool=on_extra_tool,
-            )
+            async with llm_error_handling(interaction, "Jurisprudência"):
+                raw_output = await run_research_loop(
+                    config=state.config,
+                    model_name=curr_model,
+                    messages=messages,
+                    max_iterations=max_iterations,
+                    search_results_per_topic=search_results_count,
+                    max_page_fetches=max_pages,
+                    user_id=interaction.user.id,
+                    tools=extended_tools,
+                    on_extra_tool=on_extra_tool,
+                )
 
-            logging.info(
-                "Jurisprudencia LLM request completed (user ID: %s, model: %s)",
-                interaction.user.id,
-                curr_model,
-            )
-
-        except ContentFilterError:
-            await interaction.followup.send(
-                "A geração da pesquisa foi bloqueada pelo filtro de conteúdo do provedor."
-            )
-            return
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating jurisprudencia: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                "O provedor do modelo interrompeu a geração da pesquisa. "
-                + f"Detalhe do provedor: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating jurisprudencia research")
-            await interaction.followup.send(
-                "Não consegui gerar a pesquisa de jurisprudência agora. "
-                + "Verifique os logs e tente novamente."
-            )
+                logging.info(
+                    "Jurisprudencia LLM request completed (user ID: %s, model: %s)",
+                    interaction.user.id,
+                    curr_model,
+                )
+        except LLMAborted:
             return
 
         if not raw_output.strip():
@@ -221,7 +189,9 @@ def register_jurisprudencia_command(
 
         try:
             file_bytes, ext = generate_document(raw_output, consulta, formato_valor)
-            filename = build_jurisprudencia_filename(consulta, interaction.user.id, ext)
+            filename = build_filename(
+                "jurisprudencia", consulta, interaction.user.id, ext, max_len=40
+            )
         except Exception:
             logging.exception("Error while generating jurisprudencia document file")
             await interaction.followup.send(

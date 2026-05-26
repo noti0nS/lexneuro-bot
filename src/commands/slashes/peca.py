@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
@@ -9,7 +8,6 @@ from typing import Any, cast
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.ai_tools import (
     DocumentToolSetup,
@@ -20,9 +18,13 @@ from ...helpers.attachments import (
     DocumentChunks,
     attachment_is_supported,
 )
-from ...helpers.content import get_completion_text
+from ...helpers.content import build_filename, get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
 from ...helpers.send import send_document_result
 from ...prompts.peca import build_peca_messages
 
@@ -50,15 +52,6 @@ AREA_CHOICES = [
     "Previdenciário",
     "Ambiental",
 ]
-
-
-def build_peca_filename(tipo: str | None, user_id: int, ext: str) -> str:
-    safe_tipo = re.sub(r"[^\w\s-]", "", tipo or "").strip().lower()
-    safe_tipo = re.sub(r"[-\s]+", "_", safe_tipo) or "peca"
-    if len(safe_tipo) > 60:
-        safe_tipo = safe_tipo[:60]
-    epoch = int(datetime.now().timestamp())
-    return f"peca_{safe_tipo}_{user_id}_{epoch}{ext}"
 
 
 def filter_choices(
@@ -230,11 +223,75 @@ def register_peca_command(
         request_started_at = datetime.now().timestamp()
 
         try:
-            if doc is not None:
-                for iteration in range(5):
+            async with llm_error_handling(interaction, "Peça"):
+                if doc is not None:
+                    for iteration in range(5):
+                        logging.info(
+                            "Peça LLM tool iteration %s/5 (user ID: %s, model: %s)",
+                            iteration + 1,
+                            interaction.user.id,
+                            curr_model,
+                        )
+
+                        completion_task = asyncio.create_task(
+                            execute_chat_completion(
+                                config=state.config,
+                                model_name=curr_model,
+                                messages=messages,
+                                stream=False,
+                                tools=peca_tools,
+                                tool_choice="auto",
+                            )
+                        )
+                        completion = await await_task_with_heartbeats(
+                            completion_task,
+                            f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
+                        )
+                        choice = completion.choices[0]
+
+                        if choice.finish_reason != "tool_calls":
+                            raw_output = get_completion_text(completion)
+                            break
+
+                        if choice.message and choice.message.tool_calls:
+                            messages.append(choice.message.to_dict())
+                            for tc_raw in choice.message.tool_calls:
+                                tc = cast(Any, tc_raw)
+                                try:
+                                    args = json.loads(tc.function.arguments)
+                                except json.JSONDecodeError:
+                                    args = {}
+                                assert peca_on_extra_tool is not None
+                                result = peca_on_extra_tool(tc.function.name, args)
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tc.id,
+                                        "content": result,
+                                    }
+                                )
+                    else:
+                        logging.warning(
+                            "Peça tool loop exhausted, forcing final call (user ID: %s)",
+                            interaction.user.id,
+                        )
+                        completion_task = asyncio.create_task(
+                            execute_chat_completion(
+                                config=state.config,
+                                model_name=curr_model,
+                                messages=messages,
+                                stream=False,
+                                tool_choice="none",
+                            )
+                        )
+                        completion = await await_task_with_heartbeats(
+                            completion_task,
+                            f"Peça final generation still running (user ID: {interaction.user.id})",
+                        )
+                        raw_output = get_completion_text(completion)
+                else:
                     logging.info(
-                        "Peça LLM tool iteration %s/5 (user ID: %s, model: %s)",
-                        iteration + 1,
+                        "Peça LLM request starting (user ID: %s, model: %s)",
                         interaction.user.id,
                         curr_model,
                     )
@@ -245,101 +302,22 @@ def register_peca_command(
                             model_name=curr_model,
                             messages=messages,
                             stream=False,
-                            tools=peca_tools,
-                            tool_choice="auto",
                         )
                     )
                     completion = await await_task_with_heartbeats(
                         completion_task,
                         f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
                     )
-                    choice = completion.choices[0]
-
-                    if choice.finish_reason != "tool_calls":
-                        raw_output = get_completion_text(completion)
-                        break
-
-                    if choice.message and choice.message.tool_calls:
-                        messages.append(choice.message.to_dict())
-                        for tc_raw in choice.message.tool_calls:
-                            tc = cast(Any, tc_raw)
-                            try:
-                                args = json.loads(tc.function.arguments)
-                            except json.JSONDecodeError:
-                                args = {}
-                            assert peca_on_extra_tool is not None
-                            result = peca_on_extra_tool(tc.function.name, args)
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "content": result,
-                                }
-                            )
-                else:
-                    logging.warning(
-                        "Peça tool loop exhausted, forcing final call (user ID: %s)",
-                        interaction.user.id,
-                    )
-                    completion_task = asyncio.create_task(
-                        execute_chat_completion(
-                            config=state.config,
-                            model_name=curr_model,
-                            messages=messages,
-                            stream=False,
-                            tool_choice="none",
-                        )
-                    )
-                    completion = await await_task_with_heartbeats(
-                        completion_task,
-                        f"Peça final generation still running (user ID: {interaction.user.id})",
-                    )
                     raw_output = get_completion_text(completion)
-            else:
+
+                elapsed = datetime.now().timestamp() - request_started_at
                 logging.info(
-                    "Peça LLM request starting (user ID: %s, model: %s)",
+                    "Peça LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     curr_model,
+                    elapsed,
                 )
-
-                completion_task = asyncio.create_task(
-                    execute_chat_completion(
-                        config=state.config,
-                        model_name=curr_model,
-                        messages=messages,
-                        stream=False,
-                    )
-                )
-                completion = await await_task_with_heartbeats(
-                    completion_task,
-                    f"Peça LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
-                )
-                raw_output = get_completion_text(completion)
-
-            elapsed = datetime.now().timestamp() - request_started_at
-            logging.info(
-                "Peça LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
-                interaction.user.id,
-                curr_model,
-                elapsed,
-            )
-
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating peça: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                "O provedor do modelo interrompeu a geração da peça. "
-                + f"Detalhe do provedor: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating peça")
-            await interaction.followup.send(
-                "Não consegui gerar a peça processual agora. "
-                + "Verifique os logs e tente novamente."
-            )
+        except LLMAborted:
             return
 
         if not raw_output.strip():
@@ -349,7 +327,7 @@ def register_peca_command(
         try:
             title = tipo if tipo else "Peça Processual"
             file_bytes, ext = generate_document(raw_output, title, formato_valor)
-            filename = build_peca_filename(tipo, interaction.user.id, ext)
+            filename = build_filename("peca", tipo or "peca", interaction.user.id, ext)
         except RuntimeError as exc:
             await interaction.followup.send(str(exc))
             return

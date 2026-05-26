@@ -1,5 +1,6 @@
+import contextlib
 import logging
-from collections.abc import AsyncIterable
+from collections.abc import AsyncGenerator, AsyncIterable
 from typing import Any
 
 import discord
@@ -164,3 +165,42 @@ def get_provider_error_detail(exc: APIError) -> str:
         parts.append(f"body={body}")
 
     return "; ".join(parts)
+
+
+class LLMAborted(Exception):
+    """Sentinel: LLM error was already handled and reported to user."""
+
+
+@contextlib.asynccontextmanager
+async def llm_error_handling(
+    interaction: discord.Interaction, command_name: str
+) -> AsyncGenerator[None, None]:
+    from .ai_tools import ContentFilterError
+
+    try:
+        yield
+    except ContentFilterError as exc:
+        logging.error(
+            "%s LLM content filter triggered (user ID: %s)",
+            command_name,
+            interaction.user.id,
+        )
+        await interaction.followup.send(str(exc))
+        raise LLMAborted() from exc
+    except APIError as exc:
+        logging.exception(
+            "Provider error while generating %s: %s",
+            command_name,
+            get_provider_error_detail(exc),
+        )
+        await interaction.followup.send(
+            "O provedor do modelo interrompeu a geração. "
+            + f"Detalhe do provedor: `{str(exc)[:500]}`"
+        )
+        raise LLMAborted() from exc
+    except Exception:
+        logging.exception("Error while generating %s", command_name)
+        await interaction.followup.send(
+            "Não consegui gerar o resultado agora. Verifique os logs e tente novamente."
+        )
+        raise LLMAborted()

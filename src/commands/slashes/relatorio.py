@@ -1,17 +1,14 @@
 import asyncio
 import logging
-import re
 from datetime import datetime
 from typing import Any
 
 import discord
 import httpx
 from discord.ext import commands
-from openai import APIError
 
 from ...helpers.ai_tools import (
     ALL_RESEARCH_TOOLS,
-    ContentFilterError,
     DocumentToolSetup,
     run_research_loop,
     setup_document_tools,
@@ -22,9 +19,13 @@ from ...helpers.attachments import (
     attachment_is_supported,
     read_attachment_text,
 )
-from ...helpers.content import get_completion_text
+from ...helpers.content import build_filename, get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
-from ...helpers.llm import execute_chat_completion, get_provider_error_detail
+from ...helpers.llm import (
+    LLMAborted,
+    execute_chat_completion,
+    llm_error_handling,
+)
 from ...helpers.send import send_document_result
 from ...prompts.relatorio import build_relatorio_messages
 
@@ -56,15 +57,6 @@ _MESES = [
 
 def _format_date_pt(dt: datetime) -> str:
     return f"{dt.day} de {_MESES[dt.month - 1]} de {dt.year}"
-
-
-def build_relatorio_filename(titulo: str, user_id: int, ext: str) -> str:
-    safe_titulo = re.sub(r"[^\w\s-]", "", titulo).strip().lower()
-    safe_titulo = re.sub(r"[-\s]+", "_", safe_titulo) or "relatorio"
-    if len(safe_titulo) > 60:
-        safe_titulo = safe_titulo[:60]
-    epoch = int(datetime.now().timestamp())
-    return f"relatorio_{safe_titulo}_{user_id}_{epoch}{ext}"
 
 
 def register_relatorio_command(
@@ -269,75 +261,53 @@ def register_relatorio_command(
         request_started_at = datetime.now().timestamp()
 
         try:
-            if pesquisar_enabled:
-                max_iterations = relatorio_config.get("max_tool_iterations", 15)
-                search_results_count = relatorio_config.get(
-                    "search_results_per_topic", 8
-                )
-                max_pages = relatorio_config.get("max_page_fetches", 5)
+            async with llm_error_handling(interaction, "Relatório"):
+                if pesquisar_enabled:
+                    max_iterations = relatorio_config.get("max_tool_iterations", 15)
+                    search_results_count = relatorio_config.get(
+                        "search_results_per_topic", 8
+                    )
+                    max_pages = relatorio_config.get("max_page_fetches", 5)
 
-                raw_output = await run_research_loop(
-                    config=state.config,
-                    model_name=curr_model,
-                    messages=messages,
-                    max_iterations=max_iterations,
-                    search_results_per_topic=search_results_count,
-                    max_page_fetches=max_pages,
-                    user_id=interaction.user.id,
-                    tools=extended_tools,
-                    on_extra_tool=on_extra_tool,
-                )
-            else:
-                logging.info(
-                    "Relatorio request started (user ID: %s, model: %s)",
-                    interaction.user.id,
-                    curr_model,
-                )
-                completion_task = asyncio.create_task(
-                    execute_chat_completion(
+                    raw_output = await run_research_loop(
                         config=state.config,
                         model_name=curr_model,
                         messages=messages,
-                        tool_choice="none",
+                        max_iterations=max_iterations,
+                        search_results_per_topic=search_results_count,
+                        max_page_fetches=max_pages,
+                        user_id=interaction.user.id,
+                        tools=extended_tools,
+                        on_extra_tool=on_extra_tool,
                     )
-                )
-                completion = await await_task_with_heartbeats(
-                    completion_task,
-                    f"Relatorio LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
-                )
-                raw_output = get_completion_text(completion)
+                else:
+                    logging.info(
+                        "Relatorio request started (user ID: %s, model: %s)",
+                        interaction.user.id,
+                        curr_model,
+                    )
+                    completion_task = asyncio.create_task(
+                        execute_chat_completion(
+                            config=state.config,
+                            model_name=curr_model,
+                            messages=messages,
+                            tool_choice="none",
+                        )
+                    )
+                    completion = await await_task_with_heartbeats(
+                        completion_task,
+                        f"Relatorio LLM request still running (user ID: {interaction.user.id}, model: {curr_model})",
+                    )
+                    raw_output = get_completion_text(completion)
 
-            elapsed = datetime.now().timestamp() - request_started_at
-            logging.info(
-                "Relatorio LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
-                interaction.user.id,
-                curr_model,
-                elapsed,
-            )
-
-        except ContentFilterError as exc:
-            logging.error(
-                "Relatorio LLM content filter triggered (user ID: %s)",
-                interaction.user.id,
-            )
-            await interaction.followup.send(str(exc))
-            return
-        except APIError as exc:
-            logging.exception(
-                "Provider error while generating relatorio: %s",
-                get_provider_error_detail(exc),
-            )
-            await interaction.followup.send(
-                "O provedor do modelo interrompeu a geração do relatório. "
-                + f"Detalhe do provedor: `{str(exc)[:500]}`"
-            )
-            return
-        except Exception:
-            logging.exception("Error while generating relatorio")
-            await interaction.followup.send(
-                "Não consegui gerar o relatório agora. "
-                + "Verifique os logs e tente novamente."
-            )
+                elapsed = datetime.now().timestamp() - request_started_at
+                logging.info(
+                    "Relatorio LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
+                    interaction.user.id,
+                    curr_model,
+                    elapsed,
+                )
+        except LLMAborted:
             return
 
         if not raw_output.strip():
@@ -349,7 +319,7 @@ def register_relatorio_command(
         # Generate document file
         try:
             file_bytes, ext = generate_document(raw_output, titulo, formato_valor)
-            filename = build_relatorio_filename(titulo, interaction.user.id, ext)
+            filename = build_filename("relatorio", titulo, interaction.user.id, ext)
         except Exception:
             logging.exception("Error while generating relatorio document file")
             await interaction.followup.send(

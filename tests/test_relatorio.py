@@ -1,4 +1,4 @@
-from src.commands.slashes.relatorio import build_relatorio_filename
+from src.helpers.content import build_filename
 from src.helpers.documents import DOCUMENT_FORMAT_CHOICES
 from src.prompts.relatorio import RELATORIO_SYSTEM_PROMPT, build_relatorio_messages
 
@@ -180,20 +180,24 @@ def test_format_choices_count() -> None:
 
 
 def test_build_relatorio_filename_docx() -> None:
-    filename = build_relatorio_filename("Árvores B e Trie", user_id=123456, ext=".docx")
+    filename = build_filename(
+        "relatorio", "Árvores B e Trie", user_id=123456, ext=".docx"
+    )
     assert filename.startswith("relatorio_")
     assert filename.endswith(".docx")
     assert "_123456_" in filename
 
 
 def test_build_relatorio_filename_pdf() -> None:
-    filename = build_relatorio_filename("Relatório de Teste", user_id=789, ext=".pdf")
+    filename = build_filename(
+        "relatorio", "Relatório de Teste", user_id=789, ext=".pdf"
+    )
     assert "_789_" in filename
     assert filename.endswith(".pdf")
 
 
 def test_build_relatorio_filename_sanitizes_special_chars() -> None:
-    filename = build_relatorio_filename("árvore @#$% 123", user_id=5, ext=".odt")
+    filename = build_filename("relatorio", "árvore @#$% 123", user_id=5, ext=".odt")
     assert "@" not in filename
     assert "#" not in filename
     assert "$" not in filename

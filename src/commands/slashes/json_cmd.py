@@ -10,6 +10,8 @@ import httpx
 import yaml
 from discord.ext import commands
 
+from ...helpers.attachments import download_attachment_text
+
 ACAO_JSON_CHOICES = [
     discord.app_commands.Choice(name="Validar", value="validar"),
     discord.app_commands.Choice(name="Formatar (indentado)", value="formatar"),
@@ -174,26 +176,10 @@ def register_json_command(
                 interaction.user.id,
                 arquivo.filename,
             )
-            try:
-                response = await httpx_client.get(arquivo.url)
-                response.raise_for_status()
-            except Exception:
-                logging.exception(
-                    "JSON file download failed (user ID: %s, file: %s)",
-                    interaction.user.id,
-                    arquivo.filename,
-                )
-                await interaction.response.send_message(
-                    "Não consegui baixar o anexo. Tente novamente.",
-                    ephemeral=True,
-                )
-                return
-
-            file_text = response.text.strip()
-            if not file_text:
-                await interaction.response.send_message(
-                    "O arquivo parece estar vazio.", ephemeral=True
-                )
+            file_text = await download_attachment_text(
+                httpx_client, arquivo, interaction
+            )
+            if file_text is None:
                 return
 
             if input_text:
