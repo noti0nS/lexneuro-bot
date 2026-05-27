@@ -84,6 +84,9 @@ def get_model_chain(config: dict[str, Any], model_name: str) -> list[str]:
     return [model_name]
 
 
+_openai_clients: dict[tuple[str, str], AsyncOpenAI] = {}
+
+
 def get_openai_config(
     config: dict[str, Any], provider_slash_model: str
 ) -> tuple[AsyncOpenAI, OpenAIRequestConfig]:
@@ -98,10 +101,11 @@ def get_openai_config(
         provider_config.get("api_key", "sk-no-key-required"),
     )
 
-    openai_client = AsyncOpenAI(
-        base_url=base_url,
-        api_key=api_key,
-    )
+    cache_key = (base_url, api_key)
+    openai_client = _openai_clients.get(cache_key)
+    if openai_client is None:
+        openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        _openai_clients[cache_key] = openai_client
 
     model_parameters = config["models"].get(provider_slash_model, None)
     extra_body = (provider_config.get("extra_body") or {}) | (
@@ -139,9 +143,12 @@ def build_openai_chat_completion_kwargs(
 ) -> dict[str, Any]:
     needs_deepseek_reasoning = _needs_deepseek_reasoning(openai_config)
     if needs_deepseek_reasoning:
-        for msg in messages:
-            if msg.get("role") == "assistant" and "reasoning_content" not in msg:
-                msg["reasoning_content"] = ""
+        messages = [
+            {**msg, "reasoning_content": msg.get("reasoning_content", "")}
+            if msg.get("role") == "assistant"
+            else msg
+            for msg in messages
+        ]
 
     kwargs: dict[str, Any] = {
         "model": openai_config["model"],

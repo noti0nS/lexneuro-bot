@@ -259,6 +259,7 @@ def register_pesquisa_command(
                     user_id=interaction.user.id,
                     tools=extended_tools,
                     on_extra_tool=on_extra_tool,
+                    httpx_client=httpx_client,
                 )
 
                 elapsed = datetime.now().timestamp() - request_started_at

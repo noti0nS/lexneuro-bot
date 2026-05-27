@@ -12,10 +12,11 @@ def add_message(content: str, max_history: int = 100) -> None:
 
         count = conn.execute("SELECT COUNT(*) FROM status_history").fetchone()
         if count and count[0] > max_history:
-            oldest_id = conn.execute("SELECT MIN(id) FROM status_history").fetchone()
-            if oldest_id and oldest_id[0] is not None:
-                conn.execute("DELETE FROM status_history WHERE id = ?", (oldest_id[0],))
-                conn.commit()
+            conn.execute(
+                "DELETE FROM status_history WHERE id NOT IN (SELECT id FROM status_history ORDER BY id DESC LIMIT ?)",
+                (max_history,),
+            )
+            conn.commit()
     finally:
         conn.close()
 

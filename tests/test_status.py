@@ -98,6 +98,27 @@ class TestStatusDB:
         finally:
             conn.close()
 
+    def test_add_message_trims_all_excess_rows_at_once(
+        self, temp_status_db: str
+    ) -> None:
+        max_history = 5
+        conn = sqlite3.connect(temp_status_db)
+        try:
+            for i in range(10):
+                conn.execute(
+                    "INSERT INTO status_history (content) VALUES (?)",
+                    (f"Bulk {i}",),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        assert get_message_count() == 10
+
+        add_message("Trigger trim", max_history=max_history)
+
+        assert get_message_count() == max_history
+
     def test_init_db_is_idempotent(self, temp_status_db: str) -> None:
         from src.db import init_db as db_init_db
 

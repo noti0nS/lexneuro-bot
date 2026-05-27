@@ -132,6 +132,10 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
 
         channel_lock = channel_locks.setdefault(new_msg.channel.id, asyncio.Lock())
         if channel_lock.locked():
+            try:
+                await new_msg.add_reaction("\N{HOURGLASS}")
+            except discord.HTTPException:
+                pass
             return
 
         limits = Limits.from_config(state.config)
@@ -376,148 +380,149 @@ async def _stream_and_send_response(
     first_chunk_logged = False
 
     try:
-        logging.info(
-            "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
-            new_msg.author.id,
-            state.curr_model,
-            len(messages),
-            use_plain_responses,
-        )
-
-        typing_ctx = new_msg.channel.typing()
-        typing_active = False
         try:
-            await typing_ctx.__aenter__()
-            typing_active = True
-        except discord.HTTPException as e:
-            if e.status != 429:
-                raise
-            logging.debug(
-                "Skipping typing indicator due to rate limit (channel=%s)",
-                new_msg.channel.id,
-            )
-
-        try:
-            async for chunk, model_used in stream_chat_completion(
-                config=state.config,
-                model_name=state.curr_model,
-                messages=messages[::-1],
-            ):
-                if finish_reason is not None:
-                    break
-
-                if not (choice := chunk.choices[0] if chunk.choices else None):
-                    continue
-
-                finish_reason = choice.finish_reason
-                prev_content = curr_content or ""
-                curr_content = choice.delta.content or ""
-                new_content = (
-                    prev_content
-                    if finish_reason is None
-                    else (prev_content + curr_content)
-                )
-
-                if response_contents == [] and new_content == "":
-                    continue
-
-                start_next_msg = (
-                    response_contents == []
-                    or len(response_contents[-1] + new_content) > max_message_length
-                )
-                if start_next_msg:
-                    response_contents.append("")
-
-                response_contents[-1] += new_content
-                if not first_chunk_logged and (
-                    new_content != "" or finish_reason is not None
-                ):
-                    logging.info(
-                        "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
-                        new_msg.author.id,
-                        model_used,
-                        datetime.now().timestamp() - request_started_at,
-                    )
-                    first_chunk_logged = True
-
-            if use_plain_responses:
-                for content in response_contents:
-                    sanitized = sanitize_discord_markdown(content)
-                    await _send_response(
-                        new_msg,
-                        response_msgs,
-                        msg_nodes,
-                        view=LayoutView().add_item(TextDisplay(content=sanitized)),
-                    )
-            else:
-                assert response_embed is not None
-                for content in response_contents:
-                    response_embed.description = sanitize_discord_markdown(content)
-                    response_embed.color = EMBED_COLOR_COMPLETE
-                    await _send_response(
-                        new_msg, response_msgs, msg_nodes, embed=response_embed
-                    )
-
             logging.info(
-                "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
                 new_msg.author.id,
                 state.curr_model,
-                finish_reason,
-                len(response_contents),
-                datetime.now().timestamp() - request_started_at,
+                len(messages),
+                use_plain_responses,
             )
 
-        finally:
-            if typing_active:
-                await typing_ctx.__aexit__(None, None, None)
-
-    except discord.DiscordServerError:
-        await new_msg.channel.send(
-            "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
-        )
-        logging.exception(
-            "Discord 503 error while generating response (user ID: %s, model: %s)",
-            new_msg.author.id,
-            state.curr_model,
-        )
-
-    except discord.HTTPException as e:
-        if e.status == 429:
-            rl_headers = {
-                k: e.response.headers.get(k)
-                for k in (
-                    "X-RateLimit-Limit",
-                    "X-RateLimit-Remaining",
-                    "X-RateLimit-Reset",
-                    "X-RateLimit-Reset-After",
-                    "X-RateLimit-Scope",
-                    "Retry-After",
+            typing_ctx = new_msg.channel.typing()
+            typing_active = False
+            try:
+                await typing_ctx.__aenter__()
+                typing_active = True
+            except discord.HTTPException as e:
+                if e.status != 429:
+                    raise
+                logging.debug(
+                    "Skipping typing indicator due to rate limit (channel=%s)",
+                    new_msg.channel.id,
                 )
-            }
-            logging.exception(
-                "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
-                new_msg.author.id,
-                state.curr_model,
-                rl_headers,
+
+            try:
+                async for chunk, model_used in stream_chat_completion(
+                    config=state.config,
+                    model_name=state.curr_model,
+                    messages=messages[::-1],
+                ):
+                    if finish_reason is not None:
+                        break
+
+                    if not (choice := chunk.choices[0] if chunk.choices else None):
+                        continue
+
+                    finish_reason = choice.finish_reason
+                    prev_content = curr_content or ""
+                    curr_content = choice.delta.content or ""
+                    new_content = (
+                        prev_content
+                        if finish_reason is None
+                        else (prev_content + curr_content)
+                    )
+
+                    if response_contents == [] and new_content == "":
+                        continue
+
+                    start_next_msg = (
+                        response_contents == []
+                        or len(response_contents[-1] + new_content) > max_message_length
+                    )
+                    if start_next_msg:
+                        response_contents.append("")
+
+                    response_contents[-1] += new_content
+                    if not first_chunk_logged and (
+                        new_content != "" or finish_reason is not None
+                    ):
+                        logging.info(
+                            "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
+                            new_msg.author.id,
+                            model_used,
+                            datetime.now().timestamp() - request_started_at,
+                        )
+                        first_chunk_logged = True
+
+                if use_plain_responses:
+                    for content in response_contents:
+                        sanitized = sanitize_discord_markdown(content)
+                        await _send_response(
+                            new_msg,
+                            response_msgs,
+                            msg_nodes,
+                            view=LayoutView().add_item(TextDisplay(content=sanitized)),
+                        )
+                else:
+                    assert response_embed is not None
+                    for content in response_contents:
+                        response_embed.description = sanitize_discord_markdown(content)
+                        response_embed.color = EMBED_COLOR_COMPLETE
+                        await _send_response(
+                            new_msg, response_msgs, msg_nodes, embed=response_embed
+                        )
+
+                logging.info(
+                    "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
+                    new_msg.author.id,
+                    state.curr_model,
+                    finish_reason,
+                    len(response_contents),
+                    datetime.now().timestamp() - request_started_at,
+                )
+
+            finally:
+                if typing_active:
+                    await typing_ctx.__aexit__(None, None, None)
+
+        except discord.DiscordServerError:
+            await new_msg.channel.send(
+                "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
             )
-        else:
             logging.exception(
-                "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
-                e.status,
+                "Discord 503 error while generating response (user ID: %s, model: %s)",
                 new_msg.author.id,
                 state.curr_model,
             )
 
-    except Exception:
-        logging.exception(
-            "Error while generating response (user ID: %s, model: %s)",
-            new_msg.author.id,
-            state.curr_model,
-        )
+        except discord.HTTPException as e:
+            if e.status == 429:
+                rl_headers = {
+                    k: e.response.headers.get(k)
+                    for k in (
+                        "X-RateLimit-Limit",
+                        "X-RateLimit-Remaining",
+                        "X-RateLimit-Reset",
+                        "X-RateLimit-Reset-After",
+                        "X-RateLimit-Scope",
+                        "Retry-After",
+                    )
+                }
+                logging.exception(
+                    "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
+                    new_msg.author.id,
+                    state.curr_model,
+                    rl_headers,
+                )
+            else:
+                logging.exception(
+                    "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
+                    e.status,
+                    new_msg.author.id,
+                    state.curr_model,
+                )
 
-    for response_msg in response_msgs:
-        msg_nodes[response_msg.id].text = "".join(response_contents)
-        msg_nodes[response_msg.id].lock.release()
+        except Exception:
+            logging.exception(
+                "Error while generating response (user ID: %s, model: %s)",
+                new_msg.author.id,
+                state.curr_model,
+            )
+    finally:
+        for response_msg in response_msgs:
+            msg_nodes[response_msg.id].text = "".join(response_contents)
+            msg_nodes[response_msg.id].lock.release()
 
 
 async def _evict_msg_nodes(msg_nodes: dict[int, MsgNode]) -> None:
@@ -553,7 +558,12 @@ async def _process_attachments(
                     f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
                 )
             except Exception:
-                pass
+                logging.warning(
+                    "Failed to read attachment (filename: %s, content_type: %s)",
+                    att.filename,
+                    att.content_type,
+                    exc_info=True,
+                )
 
     return AttachmentResult(
         good_attachments=good_attachments,

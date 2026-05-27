@@ -73,8 +73,14 @@ async def send_document_result(
 
     for line in content.split("\n"):
         if len(current_chunk) + len(line) + 1 > max_message_length:
-            chunks.append(current_chunk)
-            current_chunk = line + "\n"
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            remaining_line = line
+            while len(remaining_line) > max_message_length:
+                chunks.append(remaining_line[:max_message_length])
+                remaining_line = remaining_line[max_message_length:]
+            current_chunk = remaining_line + "\n"
         else:
             current_chunk += line + "\n"
 

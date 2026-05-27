@@ -80,9 +80,14 @@ class _TextExtractor(HTMLParser):
         return text
 
 
-async def fetch_page_content(url: str, max_chars: int = _MAX_PAGE_CHARS) -> str:
+async def fetch_page_content(
+    url: str,
+    max_chars: int = _MAX_PAGE_CHARS,
+    httpx_client: httpx.AsyncClient | None = None,
+) -> str:
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+        client = httpx_client or httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+        try:
             response = await client.get(
                 url,
                 headers={
@@ -93,6 +98,9 @@ async def fetch_page_content(url: str, max_chars: int = _MAX_PAGE_CHARS) -> str:
                 },
             )
             response.raise_for_status()
+        finally:
+            if httpx_client is None:
+                await client.aclose()
 
         content_type = response.headers.get("content-type", "")
         if "text/html" not in content_type and "text/plain" not in content_type:

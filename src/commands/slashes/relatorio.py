@@ -279,6 +279,7 @@ def register_relatorio_command(
                         user_id=interaction.user.id,
                         tools=extended_tools,
                         on_extra_tool=on_extra_tool,
+                        httpx_client=httpx_client,
                     )
                 else:
                     logging.info(

@@ -118,6 +118,25 @@ async def test_send_large_file_non_text_channel_sends_error() -> None:
     assert "Não foi possível criar uma thread neste canal" in args[0]
 
 
+async def test_send_large_file_handles_oversized_single_line() -> None:
+    channel = _FakeTextChannel()
+    interaction = _FakeInteraction(channel=channel)
+    long_line = "x" * 5000
+    content = f"short\n{long_line}\nend"
+
+    await send_document_result(
+        _cast_interaction(interaction),
+        content,
+        "big.docx",
+        LARGE_BYTES,
+        label="Teste",
+    )
+
+    thread = channel.threads[0]
+    for msg in thread.sent[1:]:
+        assert len(msg) <= 2000
+
+
 async def test_send_default_label() -> None:
     channel = _FakeTextChannel()
     interaction = _FakeInteraction(channel=channel)

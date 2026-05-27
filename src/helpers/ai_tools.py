@@ -267,6 +267,7 @@ async def run_research_loop(
     reasoning_effort: str | None = None,
     user_id: int,
     on_extra_tool: Callable[[str, dict[str, Any]], str] | None = None,
+    httpx_client: httpx.AsyncClient | None = None,
 ) -> str:
     """Run the tool-calling research loop (web_search + fetch_page + optional extras).
 
@@ -411,7 +412,9 @@ async def run_research_loop(
                     )
                     pages_fetched += 1
 
-                    page_content = await fetch_page_content(url)
+                    page_content = await fetch_page_content(
+                        url, httpx_client=httpx_client
+                    )
                     if page_content:
                         messages.append(
                             {

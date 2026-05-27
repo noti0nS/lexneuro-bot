@@ -214,17 +214,23 @@ _DOMINIO_LABELS: dict[str, str] = {
 }
 
 
+_JURIDICO_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in sorted(_JURIDICO_KEYWORDS)) + r")\b"
+)
+_TECNOLOGIA_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in sorted(_TECNOLOGIA_KEYWORDS)) + r")\b"
+)
+
+
 def detect_domain(tema: str) -> str:
     """Detect the domain of a research topic via keyword matching."""
     tema_lower = tema.lower()
 
-    for kw in _JURIDICO_KEYWORDS:
-        if re.search(rf"\b{re.escape(kw)}\b", tema_lower):
-            return "juridico"
+    if _JURIDICO_RE.search(tema_lower):
+        return "juridico"
 
-    for kw in _TECNOLOGIA_KEYWORDS:
-        if re.search(rf"\b{re.escape(kw)}\b", tema_lower):
-            return "tecnologia"
+    if _TECNOLOGIA_RE.search(tema_lower):
+        return "tecnologia"
 
     return "geral"
 

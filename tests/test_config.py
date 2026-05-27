@@ -135,6 +135,33 @@ def test_build_kwargs_no_thinking_without_reasoning_effort() -> None:
     assert kwargs.get("extra_body") is None
 
 
+def test_build_kwargs_deepseek_does_not_mutate_messages() -> None:
+    config = {
+        "providers": {
+            "deepseek": {
+                "base_url": "https://api.deepseek.com/v1",
+                "api_key": "test-key",
+            }
+        },
+        "models": {},
+    }
+    _, openai_config = get_openai_config(config, "deepseek/deepseek-r1")
+    messages = [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi there"},
+        {"role": "user", "content": "thanks"},
+    ]
+    original_messages = [dict(m) for m in messages]
+
+    build_openai_chat_completion_kwargs(
+        openai_config, messages, stream=False, reasoning_effort="high"
+    )
+
+    for msg, original in zip(messages, original_messages):
+        assert msg == original
+        assert "reasoning_content" not in msg
+
+
 def test_build_kwargs_non_deepseek_no_thinking_body() -> None:
     config = {
         "providers": {
