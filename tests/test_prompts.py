@@ -10,8 +10,6 @@ def test_build_abnt_messages_includes_system_and_filename() -> None:
         filename="paper.docx",
         document_text="Conteudo base",
         instructions=None,
-        document_was_truncated=False,
-        max_document_chars=1000,
     )
 
     assert messages[0]["role"] == "system"
@@ -21,15 +19,12 @@ def test_build_abnt_messages_includes_system_and_filename() -> None:
     assert '"score": numero_entre_0_e_1' in messages[1]["content"]
 
 
-def test_build_abnt_messages_adds_truncation_notice() -> None:
+def test_build_abnt_messages_adds_instructions() -> None:
     messages = build_abnt_messages(
         filename="long.odt",
         document_text="Parte do texto",
         instructions="Foque em clareza",
-        document_was_truncated=True,
-        max_document_chars=1500,
     )
     user_content = messages[1]["content"]
 
     assert "Instruções adicionais do usuário" in user_content
-    assert "primeiros 1,500 caracteres" in user_content

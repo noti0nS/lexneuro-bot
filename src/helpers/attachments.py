@@ -85,8 +85,8 @@ def attachment_is_supported_word_document(attachment: discord.Attachment) -> boo
 
 
 async def read_word_attachment(
-    attachment: discord.Attachment, max_chars: int, http_client: httpx.AsyncClient
-) -> tuple[str, bool]:
+    attachment: discord.Attachment, http_client: httpx.AsyncClient
+) -> str:
     if not attachment_is_supported_word_document(attachment):
         raise ValueError("unsupported")
 
@@ -95,9 +95,7 @@ async def read_word_attachment(
 
     ext = attachment.filename.lower().rsplit(".", 1)[-1]
     processor = get_processor(ext)
-    text = processor.extract_text(response.content)
-
-    return text[:max_chars], len(text) > max_chars
+    return processor.extract_text(response.content)
 
 
 async def download_attachment_text(

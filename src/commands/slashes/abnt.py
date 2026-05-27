@@ -110,18 +110,22 @@ def register_abnt_command(
             )
             return
 
-        max_document_chars = state.config.get("abnt", {}).get(
-            "max_document_chars", state.config.get("max_text", 100000)
-        )
+        max_document_kb = state.config.get("abnt", {}).get("max_document_kb", 512)
+        file_size_kb = document.size / 1024
+        if file_size_kb > max_document_kb:
+            await interaction.response.send_message(
+                f"O arquivo excede o limite de {max_document_kb} KB ({file_size_kb:.1f} KB). Envie um arquivo menor.",
+                ephemeral=True,
+            )
+            return
+
         logging.info(
             "ABNT attachment read started (user ID: %s, file: %s)",
             interaction.user.id,
             document.filename,
         )
         try:
-            document_text, document_was_truncated = await read_word_attachment(
-                document, max_document_chars, httpx_client
-            )
+            document_text = await read_word_attachment(document, httpx_client)
         except ValueError:
             await interaction.response.send_message(
                 "Tipo de documento não suportado. Envie um arquivo `.docx` ou `.odt`.",
@@ -136,11 +140,10 @@ def register_abnt_command(
             )
             return
         logging.info(
-            "ABNT attachment read completed (user ID: %s, file: %s, chars: %s, truncated: %s)",
+            "ABNT attachment read completed (user ID: %s, file: %s, chars: %s)",
             interaction.user.id,
             document.filename,
             len(document_text),
-            document_was_truncated,
         )
 
         if not document_text.strip():
@@ -173,8 +176,6 @@ def register_abnt_command(
                     filename=document.filename,
                     document_text=document_text,
                     instructions=instructions,
-                    document_was_truncated=document_was_truncated,
-                    max_document_chars=max_document_chars,
                 )
                 logging.info(
                     "ABNT LLM request started (user ID: %s, model: %s, file: %s, message_count: %s)",

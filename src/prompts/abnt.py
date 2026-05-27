@@ -41,8 +41,6 @@ def build_abnt_messages(
     filename: str,
     document_text: str,
     instructions: str | None,
-    document_was_truncated: bool,
-    max_document_chars: int,
 ) -> list[dict[str, str]]:
     reference = load_abnt_reference()
     system_prompt = (
@@ -55,9 +53,6 @@ def build_abnt_messages(
 
     if instructions:
         user_prompt += f"\n\nInstruções adicionais do usuário:\n{instructions.strip()}"
-
-    if document_was_truncated:
-        user_prompt += f"\n\nAviso: o documento foi limitado aos primeiros {max_document_chars:,} caracteres por configuração do bot."
 
     user_prompt += f"\n\nNome do arquivo: {filename}"
     user_prompt += f"\n\nDocumento:\n{document_text}"

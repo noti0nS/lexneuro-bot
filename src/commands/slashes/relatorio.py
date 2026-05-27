@@ -168,6 +168,15 @@ def register_relatorio_command(
         extended_tools = list(ALL_RESEARCH_TOOLS)
 
         if fonte is not None:
+            relatorio_config = state.config.get("relatorio", {})
+            max_fonte_kb = relatorio_config.get("max_fonte_kb", 512)
+            file_size_kb = fonte.size / 1024
+            if file_size_kb > max_fonte_kb:
+                await interaction.followup.send(
+                    f"O arquivo excede o limite de {max_fonte_kb} KB ({file_size_kb:.1f} KB). Envie um arquivo menor."
+                )
+                return
+
             if pesquisar_enabled:
                 try:
                     setup: DocumentToolSetup = await setup_document_tools(
@@ -223,17 +232,7 @@ def register_relatorio_command(
                     len(extracted),
                 )
 
-                relatorio_config = state.config.get("relatorio", {})
-                max_fonte_chars = relatorio_config.get("max_fonte_chars", 75000)
                 fonte_arquivo = extracted
-                if len(fonte_arquivo) > max_fonte_chars:
-                    logging.warning(
-                        "Relatorio file text truncated (user ID: %s, original: %s, max: %s)",
-                        interaction.user.id,
-                        len(fonte_arquivo),
-                        max_fonte_chars,
-                    )
-                    fonte_arquivo = fonte_arquivo[:max_fonte_chars]
 
         relatorio_config = state.config.get("relatorio", {})
         autor = interaction.user.display_name
