@@ -30,10 +30,9 @@ async def execute_chat_completion(
     for model_index, model_attempt in enumerate(model_chain):
         try:
             openai_client, openai_config = get_openai_config(config, model_attempt)
+            kwargs.setdefault("stream", False)
             return await openai_client.chat.completions.create(
-                **build_openai_chat_completion_kwargs(
-                    openai_config, messages, stream=False, **kwargs
-                )
+                **build_openai_chat_completion_kwargs(openai_config, messages, **kwargs)
             )
         except (
             openai.APIStatusError,
