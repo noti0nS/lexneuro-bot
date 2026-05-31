@@ -5,7 +5,6 @@ client_id:
 status_message:
 
 max_text: 100000
-max_images: 5
 max_messages: 25
 max_file_attachments: 3
 max_attachment_kb: 512

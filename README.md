@@ -25,6 +25,10 @@ LexNeuro is a Discord bot that turns your server into an AI-powered study and co
 
 ### Slash commands
 
+### `/help` — Help
+
+Shows a complete list of all available slash commands, trigger commands, and AI chat features.
+
 ### `/pesquisa` — Academic document generation
 
 Produces articles, legal briefs, or technical documentation with integrated web search (DuckDuckGo). The model runs an agentic loop of searching and reading pages before writing.
@@ -42,6 +46,38 @@ Set the exam date and subjects. The bot shows an interactive weekday picker, cal
 ### `/model` — Model switching
 
 Admins can switch between configured LLM models without restarting the bot. Autocomplete loads models from `config.yaml` in real time.
+
+### `/peca` — Legal document drafting
+
+Generates a complete procedural legal document from a descriptive statement and/or source file (`.pdf`, `.docx`, `.odt`, `.txt`). Supports autocomplete for legal type and area of law, tool calls for large documents, and multiple output formats.
+
+### `/jurisprudencia` — Case law research
+
+Searches and summarizes Brazilian case law from STF, STJ, TST, TJDFT, TJSP, TJRJ, or all courts using web search. Supports file attachments and document export.
+
+### `/relatorio` — Academic report generation
+
+Generates a structured academic report from a title, description, optional topics, page count, and optional web search enrichment. Supports source file attachments.
+
+### `/regex` — Regex builder
+
+Builds and tests a regular expression from a plain-portuguese description. Optionally accepts sample text and regex flavor/language.
+
+### `/sql` — SQL formatter & explainer
+
+Formats and explains an SQL query provided as text or `.sql` file. Supports dialects: Generic, PostgreSQL, MySQL, SQLite, SQL Server, Oracle.
+
+### `/json` — JSON/YAML processor
+
+Validates, formats (indents), minifies, or converts between JSON and YAML. Accepts direct text input or `.json`/`.yaml`/`.yml` files.
+
+### `/status-reset` — Force status regeneration (admin only)
+
+Immediately regenerates the bot's status by deleting the last `status_history` entry and triggering `update_status()`.
+
+### `/status-time` — Status timer
+
+Shows the time remaining until the next automatic status change.
 
 ### Trigger commands (`lex!` prefix)
 
@@ -112,23 +148,32 @@ Refer to the [Discord developer docs](https://discord.com/developers/docs/quick-
 
 ### 2. Configuration
 
-You need two config files — both are gitignored and have commented example templates:
+Only one file is required. Copy the template:
 
 ```bash
 cp config-example.yaml config.yaml
-cp litellm_config-example.yaml litellm_config.yaml
 ```
 
 **`config.yaml`** — bot settings, permissions, LLM providers & models:
 
 - `bot_token` / `client_id` — from step 1 above.
 - `providers` — API endpoints and keys for each provider (OpenAI, Groq, OpenRouter, etc.). Leave unused providers empty.
-- `models` — the models available via `/model`, formatted as `provider/model`. The first model listed is the default.
+- `models` — define model aliases as `provider/model` strings. A model entry can be a **list** to set up a fallback chain: the bot tries each model in order, falling back on API errors (rate limits, connection failures, server errors).
+  ```yaml
+  models:
+    brain:
+      - groq/llama-3.3-70b-versatile
+      - deepseek/deepseek-chat     # fallback if Groq fails
+      - openai/gpt-4o-mini         # final fallback
+    openai/gpt-5:
+      reasoning_effort: high
+  ```
+  The first entry in the chain is the primary model. The `/model` slash command switches the active alias.
 - `permissions` — restrict bot access by user ID, role ID, or channel ID.
 - `abnt`, `cronograma`, `research` — command-specific tuning knobs.
 - `system_prompt` — overwrite the default personality; `{date}` and `{time}` are replaced at runtime.
 
-**`litellm_config.yaml`** (Docker only) — the [LiteLLM proxy](https://docs.litellm.ai/) config. Defines model aliases, load-balancing, and fallbacks. The example template includes a wildcard passthrough so all `config.yaml` models work out of the box.
+**`litellm_config.yaml`** _(optional, Docker only)_ — the [LiteLLM proxy](https://docs.litellm.ai/) config for auth, rate limits, load-balancing, and fallbacks. If you don't need it, run `docker compose up --no-deps bot` to skip the Litellm service.
 
 **Environment variable overrides** — any provider key can be set via env vars instead of writing it in the YAML:
 
@@ -143,15 +188,19 @@ The pattern is `PROVIDER_{PROVIDER}_API_KEY` and `PROVIDER_{PROVIDER}_BASE_URL` 
 ### 3a. Run with Docker (recommended)
 
 ```bash
+# Start both bot and litellm sidecar
 docker compose up
+
+# Start only the bot (skip litellm if you don't need it)
+docker compose up --no-deps bot
 ```
 
-This starts two services:
+Two services are available:
 
 - **`bot`** — the LexNeuro bot, reading `config.yaml` via a read-only bind mount.
-- **`litellm`** — a LiteLLM proxy sidecar that handles auth, rate limits, load-balancing, and fallbacks across all your providers.
+- **`litellm`** — an optional LiteLLM proxy sidecar for auth, rate limits, load-balancing, and fallbacks. Not required — the bot works fine without it if you configure providers directly in `config.yaml`.
 
-The bot communicates with LiteLLM under the `litellm/` provider prefix. You can still use direct providers (e.g. `openai/gpt-5`) — the wildcard passthrough in `litellm_config.yaml` relays them unchanged.
+The bot communicates with LiteLLM under the `litellm/` provider prefix. You can mix direct providers (e.g. `openai/gpt-5`) with `litellm/` aliases in the same config.
 
 _Note: the Dockerfile installs `pandoc` and `texlive` for `.docx`/`.odt`/`.pdf` export. The image is heavy (~1.5 GB). If you don't need document export you can slim it down._
 
@@ -167,7 +216,7 @@ uv sync
 uv run python main.py
 ```
 
-Without Docker there is no LiteLLM sidecar — configure providers directly in `config.yaml` (the `litellm_config.yaml` file is unused) and supply API keys via the provider config or environment variables.
+Without Docker there is no LiteLLM sidecar — configure providers directly in `config.yaml` and supply API keys via the provider config or environment variables.
 
 **Optional: document export support** — `/pesquisa` exports `.docx` and `.odt`; `/cronograma` exports `.pdf`. These depend on `pandoc` and `texlive` being installed on the host machine. Install them via your system package manager if you need these features.
 

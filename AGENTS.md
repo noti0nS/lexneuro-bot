@@ -21,7 +21,7 @@ uv run python main.py                  # run the bot
 ```
 
 - `main.py` → `src/main.py:run()` → `src/bot.py:create_discord_bot()` — this is the bot lifecycle.
-- `main.py` in the repo root is a dead stub, not the entrypoint.
+- `main.py` in the repo root delegates to `src.main.run()` — both are valid entrypoints.
 - `src/bot.py` owns the `on_message` handler, `MsgNode` cache, reply chains, LLM streaming, response splitting, and trigger-command routing. All slash commands are registered from there.
 
 ## Package layout
@@ -30,7 +30,7 @@ uv run python main.py                  # run the bot
 |---|---|
 | `src/bot.py` | Core bot: message routing, reply chains, LLM streaming, trigger commands |
 | `src/config.py` | YAML config loading, OpenAI client factory, config masking |
-| `src/commands/slashes/` | Slash commands: `/help`, `/model`, `/abnt`, `/pesquisa`, `/cronograma` |
+| `src/commands/slashes/` | Slash commands: `/help`, `/model`, `/abnt`, `/pesquisa`, `/cronograma`, `/peca`, `/jurisprudencia`, `/relatorio`, `/regex`, `/sql`, `/json`, `/status-reset`, `/status-time` |
 | `src/commands/triggers/` | Trigger commands: `lex!capture` (prefix-based, outside AI chat) |
 | `src/prompts/` | System prompts + markdown reference files loaded at runtime |
 | `src/helpers/` | Async heartbeat, content parsing, DOCX/ODT I/O, web search, UI, LLM |
@@ -69,6 +69,15 @@ uv run python main.py                  # run the bot
 - `/model <name>` — switch LLM model (admin only per `permissions.users.admin_ids`). Autocomplete reloads config on empty input.
 - `/abnt <doc> [instructions]` — evaluate `.docx`/`.odt` for ABNT compliance. Returns structured JSON then reformats into a user message.
 - `/pesquisa` — web search + LLM document generation. Uses DuckDuckGo. Supports depth/audience/format options.
+- `/cronograma` — personalized study schedule with interactive weekday picker and multi-format export.
+- `/peca <enunciado> [file] [tipo] [area]` — generate procedural legal documents.
+- `/jurisprudencia <query> [corte] [file]` — search and summarize Brazilian case law.
+- `/relatorio <titulo> <descricao>` — generate structured academic reports.
+- `/regex <descricao>` — build and test regex from natural language description.
+- `/sql <query>` — format and explain SQL queries.
+- `/json <input>` — validate, format, minify, or convert JSON/YAML.
+- `/status-reset` — force immediate status regeneration (admin only).
+- `/status-time` — show time until next automatic status change.
 
 ## Trigger commands
 
