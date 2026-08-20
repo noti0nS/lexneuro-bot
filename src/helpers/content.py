@@ -56,7 +56,9 @@ def strip_reasoning(text: str) -> str:
     tags) so the internal monologue is never shown to or stored for the user.
     """
     text = _THINK_BLOCK.sub("", text)
-    if (open_tag := re.search(r"<think>", text, re.IGNORECASE)) and "</think>" not in text.lower():
+    if (
+        open_tag := re.search(r"<think>", text, re.IGNORECASE)
+    ) and "</think>" not in text.lower():
         text = text[: open_tag.start()]
     text = _DANGLING_THINK.sub("", text)
     return text.strip()

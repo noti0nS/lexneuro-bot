@@ -92,6 +92,22 @@ def get_default_vision_model(config: dict[str, Any]) -> str | None:
     return next(iter(vision_dict))
 
 
+def get_vision_model_chain(config: dict[str, Any]) -> list[str]:
+    """Resolve the default vision alias's model chain from `vision_models`.
+
+    Uses `vision_models` directly (not `get_model_chain`) so a vision alias
+    that shares a name with a `models` alias is not shadowed by the main
+    model chain.
+    """
+    vision_dict = config.get("vision_models")
+    if not vision_dict:
+        return []
+    entry = vision_dict[next(iter(vision_dict))]
+    if isinstance(entry, list):
+        return entry
+    return [entry]
+
+
 _openai_clients: dict[tuple[str, str], AsyncOpenAI] = {}
 
 

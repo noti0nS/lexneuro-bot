@@ -1,4 +1,8 @@
-from src.helpers.content import sanitize_discord_markdown, split_long_text, strip_reasoning
+from src.helpers.content import (
+    sanitize_discord_markdown,
+    split_long_text,
+    strip_reasoning,
+)
 
 
 def test_plain_text_unchanged():

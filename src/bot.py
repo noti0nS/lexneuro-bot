@@ -317,7 +317,7 @@ async def _build_conversation_history(
                 is_primary = curr_msg.id == new_msg.id or curr_msg.id == direct_reply_id
 
                 if is_primary:
-                    att_result = await _process_attachments(
+                    att_result = await process_attachments(
                         curr_msg, limits, httpx_client, config
                     )
                 else:
@@ -544,7 +544,7 @@ async def _evict_msg_nodes(msg_nodes: dict[int, MsgNode]) -> None:
                 msg_nodes.pop(msg_id, None)
 
 
-async def _process_attachments(
+async def process_attachments(
     message: discord.Message,
     limits: Limits,
     httpx_client: httpx.AsyncClient,
@@ -635,7 +635,7 @@ def _assemble_node_content(
 ) -> None:
     curr_node.role = "assistant" if message.author == bot_user else "user"
 
-    text = _extract_message_text(
+    text = extract_message_text(
         message, bot_user, att_result.doc_texts, att_result.image_descriptions
     )
 
@@ -738,7 +738,7 @@ async def _send_response(
     await msg_nodes[response_msg.id].lock.acquire()
 
 
-def _extract_message_text(
+def extract_message_text(
     message: discord.Message,
     bot_user: discord.ClientUser,
     doc_texts: list[str],

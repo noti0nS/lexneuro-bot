@@ -5,7 +5,7 @@ from typing import Any, cast
 import discord
 import httpx
 
-from src.bot import _extract_message_text, _process_attachments
+from src.bot import extract_message_text, process_attachments
 from src.config import Limits
 from src.helpers import vision
 from src.helpers.vision import describe_images
@@ -64,7 +64,7 @@ class _Msg:
 def _config() -> dict[str, Any]:
     return {
         "providers": {
-            "openai": {"base_url": "https://api.openai.com/v1", "api_key": "k"}
+            "openai": {"base_url": "http://localhost:1234/v1", "api_key": "k"}
         },
         "models": {},
         "vision_models": {"vision/brain": ["openai/gpt-4o"]},
@@ -144,14 +144,136 @@ async def test_describe_images_strips_fenced_json(monkeypatch: Any) -> None:
     assert result == ["a", "b"]
 
 
-async def test_describe_images_raises_on_bad_json(monkeypatch: Any) -> None:
+async def test_describe_images_prose_single_image_fallback(monkeypatch: Any) -> None:
     async def fake_execute(
         config: Any,
         model_name: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> _VCompletion:
-        return _VCompletion(choices=[_VChoice(message=_VMessage(content="not json"))])
+        return _VCompletion(
+            choices=[_VChoice(message=_VMessage(content="a cat sitting on a chair"))]
+        )
+
+    monkeypatch.setattr(vision, "execute_chat_completion", fake_execute)
+
+    result = await describe_images(
+        _cast_attachments([_Attachment(url="u", content_type="image/png")]),
+        _config(),
+        _cast_http(),
+    )
+    assert result == ["a cat sitting on a chair"]
+
+
+async def test_describe_images_extracts_json_embedded_in_prose(
+    monkeypatch: Any,
+) -> None:
+    async def fake_execute(
+        config: Any,
+        model_name: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> _VCompletion:
+        return _VCompletion(
+            choices=[
+                _VChoice(
+                    message=_VMessage(content='Sure!\n["a", "b"]\nHope that helps')
+                )
+            ]
+        )
+
+    monkeypatch.setattr(vision, "execute_chat_completion", fake_execute)
+
+    result = await describe_images(
+        _cast_attachments(
+            [
+                _Attachment(url="u1", content_type="image/png"),
+                _Attachment(url="u2", content_type="image/png"),
+            ]
+        ),
+        _config(),
+        _cast_http(),
+    )
+    assert result == ["a", "b"]
+
+
+async def test_describe_images_strips_think_blocks(monkeypatch: Any) -> None:
+    async def fake_execute(
+        config: Any,
+        model_name: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> _VCompletion:
+        return _VCompletion(
+            choices=[
+                _VChoice(
+                    message=_VMessage(
+                        content=(
+                            "<think>Let me analyze the image.</think>\n"
+                            '["a red circle", "a blue square"]'
+                        )
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr(vision, "execute_chat_completion", fake_execute)
+
+    attachments = _cast_attachments(
+        [
+            _Attachment(url="https://cdn/1.png", content_type="image/png"),
+            _Attachment(url="https://cdn/2.jpg", content_type="image/jpeg"),
+        ]
+    )
+
+    result = await describe_images(attachments, _config(), _cast_http())
+
+    assert result == ["a red circle", "a blue square"]
+
+
+async def test_describe_images_routes_to_vision_chain_not_models(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_execute(
+        config: Any,
+        model_name: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> _VCompletion:
+        captured["model"] = model_name
+        return _VCompletion(choices=[_VChoice(message=_VMessage(content='["ok"]'))])
+
+    monkeypatch.setattr(vision, "execute_chat_completion", fake_execute)
+
+    config = {
+        "providers": {
+            "groq": {"base_url": "https://api.groq.com/v1", "api_key": "k"},
+            "openai": {"base_url": "https://api.openai.com/v1", "api_key": "k"},
+        },
+        "models": {"brain": ["groq/llama-3.3-70b"]},
+        "vision_models": {"brain": ["openai/gpt-4o", "openai/gpt-4o-mini"]},
+    }
+
+    attachments = _cast_attachments(
+        [_Attachment(url="https://cdn/1.png", content_type="image/png")]
+    )
+
+    result = await describe_images(attachments, config, _cast_http())
+
+    assert result == ["ok"]
+    assert captured["model"] == "openai/gpt-4o"  # not the groq main model
+
+
+async def test_describe_images_empty_response_raises(monkeypatch: Any) -> None:
+    async def fake_execute(
+        config: Any,
+        model_name: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> _VCompletion:
+        return _VCompletion(choices=[_VChoice(message=_VMessage(content=""))])
 
     monkeypatch.setattr(vision, "execute_chat_completion", fake_execute)
 
@@ -164,12 +286,12 @@ async def test_describe_images_raises_on_bad_json(monkeypatch: Any) -> None:
     except ValueError as exc:
         assert "invalid_vision_response" in str(exc)
     else:
-        raise AssertionError("Expected ValueError for invalid vision response")
+        raise AssertionError("Expected ValueError for empty vision response")
 
 
 def test_extract_message_text_builds_image_template() -> None:
     msg = _Msg(content="What is this?")
-    text = _extract_message_text(
+    text = extract_message_text(
         cast(discord.Message, cast(object, msg)),
         cast(discord.ClientUser, cast(object, _BotUser())),
         doc_texts=[],
@@ -183,7 +305,7 @@ def test_extract_message_text_builds_image_template() -> None:
 
 def test_extract_message_text_no_images_unchanged() -> None:
     msg = _Msg(content="hello")
-    text = _extract_message_text(
+    text = extract_message_text(
         cast(discord.Message, cast(object, msg)),
         cast(discord.ClientUser, cast(object, _BotUser())),
         doc_texts=["<file:x.txt>\nbody\n</file:x.txt>"],
@@ -206,7 +328,7 @@ async def test_process_attachments_marks_images_bad_without_vision() -> None:
         max_text=1000, max_messages=10, max_attachment_kb=512, max_file_attachments=3
     )
 
-    result = await _process_attachments(
+    result = await process_attachments(
         cast(discord.Message, cast(object, msg)),
         limits,
         cast(httpx.AsyncClient, cast(object, _NoDownload())),
@@ -237,7 +359,7 @@ async def test_process_attachments_describes_images_with_vision(
         max_text=1000, max_messages=10, max_attachment_kb=512, max_file_attachments=3
     )
 
-    result = await _process_attachments(
+    result = await process_attachments(
         cast(discord.Message, cast(object, msg)),
         limits,
         _cast_http(),

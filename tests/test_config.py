@@ -4,6 +4,7 @@ from src.config import (
     get_default_vision_model,
     get_model_chain,
     get_openai_config,
+    get_vision_model_chain,
     mask_sensitive_config,
 )
 
@@ -39,6 +40,19 @@ def test_get_default_vision_model_returns_first_key_or_none() -> None:
     config = {"vision_models": {"vision/brain": ["openai/gpt-4o"]}}
     assert get_default_vision_model(config) == "vision/brain"
     assert get_default_vision_model({"models": {}}) is None
+
+
+def test_get_vision_model_chain_prefers_vision_models_over_models() -> None:
+    # Same alias name in both dicts must not shadow the vision chain.
+    config = {
+        "models": {"brain": ["groq/llama-3.3-70b"]},
+        "vision_models": {"brain": ["openai/gpt-4o", "openai/gpt-4o-mini"]},
+    }
+    assert get_vision_model_chain(config) == [
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+    ]
+    assert get_vision_model_chain({"models": {}}) == []
 
 
 def test_get_bot_token_raises_when_missing() -> None:
