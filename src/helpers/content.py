@@ -13,7 +13,7 @@ def get_completion_text(completion: Any) -> str:
     content = getattr(message, "content", "")
 
     if isinstance(content, str):
-        return content.strip()
+        return strip_reasoning(content)
 
     if isinstance(content, list):
         chunks = []
@@ -28,7 +28,7 @@ def get_completion_text(completion: Any) -> str:
             if part_type == "text" and isinstance(part_text, str):
                 chunks.append(part_text)
 
-        return "".join(chunks).strip()
+        return strip_reasoning("".join(chunks))
 
     return str(content).strip()
 
@@ -42,6 +42,47 @@ def build_filename(
         safe = safe[:max_len]
     epoch = int(datetime.now().timestamp())
     return f"{prefix}_{safe}_{user_id}_{epoch}{ext}"
+
+
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+_DANGLING_THINK = re.compile(r"</?think[^>\n]*$", re.IGNORECASE)
+
+
+def strip_reasoning(text: str) -> str:
+    """Remove model reasoning/chain-of-thought blocks from generated text.
+
+    Reasoning models (e.g. Qwen3-Thinking) emit a ``<think>...</think>`` block
+    inside the normal content stream. We must drop the whole block (not just the
+    tags) so the internal monologue is never shown to or stored for the user.
+    """
+    text = _THINK_BLOCK.sub("", text)
+    if (open_tag := re.search(r"<think>", text, re.IGNORECASE)) and "</think>" not in text.lower():
+        text = text[: open_tag.start()]
+    text = _DANGLING_THINK.sub("", text)
+    return text.strip()
+
+
+def split_long_text(text: str, max_len: int) -> list[str]:
+    """Split ``text`` into chunks of at most ``max_len`` characters."""
+    if not text:
+        return []
+
+    chunks: list[str] = []
+    while len(text) > max_len:
+        split_at = text.rfind("\n\n", 0, max_len)
+        if split_at < max_len // 2:
+            split_at = text.rfind("\n", 0, max_len)
+        if split_at < max_len // 2:
+            split_at = max_len
+
+        chunk = text[:split_at].strip()
+        if chunk:
+            chunks.append(chunk)
+        text = text[split_at:].lstrip()
+
+    if text.strip():
+        chunks.append(text.strip())
+    return chunks
 
 
 def sanitize_discord_markdown(text: str) -> str:

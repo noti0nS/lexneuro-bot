@@ -106,6 +106,8 @@ async def stream_completion_to_channel(
         openai_config, messages, stream=True
     )
 
+    in_thinking = False
+
     async for chunk in await openai_client.chat.completions.create(**request_kwargs):
         if finish_reason is not None:
             break
@@ -120,6 +122,26 @@ async def stream_completion_to_channel(
             continue
 
         pending_content += new_content
+
+        if not in_thinking:
+            open_idx = pending_content.find("<think>")
+            if open_idx != -1:
+                before = pending_content[:open_idx]
+                pending_content = pending_content[open_idx + len("<think>") :]
+                if before.strip():
+                    response_chunks.append(before.strip())
+                    await channel.send(before.strip())
+                in_thinking = True
+
+        if in_thinking:
+            close_idx = pending_content.find("</think>")
+            if close_idx != -1:
+                pending_content = pending_content[close_idx + len("</think>") :]
+                in_thinking = False
+            else:
+                pending_content = ""
+                continue
+
         if not first_chunk_logged and (new_content != "" or finish_reason is not None):
             logging.info(
                 "Streaming helper first chunk received (model: %s)",

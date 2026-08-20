@@ -32,7 +32,7 @@ from .helpers.attachments import (
     read_attachment_text,
 )
 from .helpers.vision import describe_images
-from .helpers.content import sanitize_discord_markdown
+from .helpers.content import sanitize_discord_markdown, split_long_text, strip_reasoning
 from .helpers.llm import (
     stream_chat_completion,
 )
@@ -382,6 +382,7 @@ async def _stream_and_send_response(
     curr_content = finish_reason = None
     response_msgs: list[discord.Message] = []
     response_contents: list[str] = []
+    clean_response = ""
 
     request_started_at = datetime.now().timestamp()
     first_chunk_logged = False
@@ -452,8 +453,12 @@ async def _stream_and_send_response(
                         )
                         first_chunk_logged = True
 
+                raw_response = "".join(response_contents)
+                clean_response = strip_reasoning(raw_response)
+                final_segments = split_long_text(clean_response, max_message_length)
+
                 if use_plain_responses:
-                    for content in response_contents:
+                    for content in final_segments:
                         sanitized = sanitize_discord_markdown(content)
                         await _send_response(
                             new_msg,
@@ -463,7 +468,7 @@ async def _stream_and_send_response(
                         )
                 else:
                     assert response_embed is not None
-                    for content in response_contents:
+                    for content in final_segments:
                         response_embed.description = sanitize_discord_markdown(content)
                         response_embed.color = EMBED_COLOR_COMPLETE
                         await _send_response(
@@ -528,7 +533,7 @@ async def _stream_and_send_response(
             )
     finally:
         for response_msg in response_msgs:
-            msg_nodes[response_msg.id].text = "".join(response_contents)
+            msg_nodes[response_msg.id].text = clean_response
             msg_nodes[response_msg.id].lock.release()
 
 

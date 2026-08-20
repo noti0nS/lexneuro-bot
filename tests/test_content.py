@@ -1,4 +1,4 @@
-from src.helpers.content import sanitize_discord_markdown
+from src.helpers.content import sanitize_discord_markdown, split_long_text, strip_reasoning
 
 
 def test_plain_text_unchanged():
@@ -417,3 +417,55 @@ def test_code_block_split_across_two_messages():
     assert "```python" in r1
     # closing backticks survive in msg2
     assert "```" in r2
+
+
+def test_strip_reasoning_full_block():
+    text = "<think>Let me reason step by step...</think>\nTô ótimo, blz!"
+    assert strip_reasoning(text) == "Tô ótimo, blz!"
+
+
+def test_strip_reasoning_block_with_surrounding_text():
+    text = "intro<think>inner monologue</think>answer"
+    assert strip_reasoning(text) == "introanswer"
+
+
+def test_strip_reasoning_no_block_unchanged():
+    text = "Just a normal answer with no thinking."
+    assert strip_reasoning(text) == "Just a normal answer with no thinking."
+
+
+def test_strip_reasoning_uppercase_tags():
+    text = "<THINK>secret thoughts</THINK>reply"
+    assert strip_reasoning(text) == "reply"
+
+
+def test_strip_reasoning_dangling_open_tag():
+    text = "<think>unfinished reasoning"
+    assert strip_reasoning(text) == ""
+
+
+def test_strip_reasoning_multiline_block():
+    text = "<think>\nline1\nline2\n</think>\nfinal answer"
+    assert strip_reasoning(text) == "final answer"
+
+
+def test_split_long_text_short():
+    assert split_long_text("hello", 2000) == ["hello"]
+
+
+def test_split_long_text_empty():
+    assert split_long_text("", 2000) == []
+
+
+def test_split_long_text_on_paragraph():
+    text = "a" * 100 + "\n\n" + "b" * 100
+    chunks = split_long_text(text, 150)
+    assert len(chunks) == 2
+    assert chunks == ["a" * 100, "b" * 100]
+
+
+def test_split_long_text_no_break():
+    text = "x" * 5000
+    chunks = split_long_text(text, 2000)
+    assert len(chunks) == 3
+    assert "".join(chunks) == text
