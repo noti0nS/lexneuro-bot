@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 import discord
@@ -100,7 +102,7 @@ def register_jurisprudencia_command(
             ephemeral=True,
         )
 
-        logging.info(
+        logger.info(
             "Jurisprudencia started (user ID: %s, consulta: %r, tribunal: %s, periodo: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             consulta[:80],
@@ -123,7 +125,7 @@ def register_jurisprudencia_command(
                 await interaction.followup.send("O arquivo anexado parece estar vazio.")
                 return
             except Exception:
-                logging.exception(
+                logger.exception(
                     "Jurisprudencia file extraction failed (user ID: %s)",
                     interaction.user.id,
                 )
@@ -136,7 +138,7 @@ def register_jurisprudencia_command(
             extended_tools = setup.tools
             on_extra_tool = setup.on_extra_tool
 
-            logging.info(
+            logger.info(
                 "Jurisprudencia file extracted (user ID: %s, filename: %s, chunks: %s, chars: %s)",
                 interaction.user.id,
                 fonte.filename,
@@ -173,7 +175,7 @@ def register_jurisprudencia_command(
                     httpx_client=httpx_client,
                 )
 
-                logging.info(
+                logger.info(
                     "Jurisprudencia LLM request completed (user ID: %s, model: %s)",
                     interaction.user.id,
                     curr_model,
@@ -194,7 +196,7 @@ def register_jurisprudencia_command(
                 "jurisprudencia", consulta, interaction.user.id, ext, max_len=40
             )
         except Exception:
-            logging.exception("Error while generating jurisprudencia document file")
+            logger.exception("Error while generating jurisprudencia document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."

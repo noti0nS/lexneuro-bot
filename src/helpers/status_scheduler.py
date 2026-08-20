@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands, tasks
@@ -13,7 +15,7 @@ from .status_generator import generate_status_message
 async def _apply_status(bot: commands.Bot, text: str) -> None:
     activity = discord.CustomActivity(name=text[:128])
     await bot.change_presence(activity=activity)
-    logging.info("Status updated to: %s", text[:128])
+    logger.info("Status updated to: %s", text[:128])
 
 
 async def update_status(bot: commands.Bot) -> None:
@@ -35,11 +37,11 @@ async def update_status(bot: commands.Bot) -> None:
         content, created_at_str = latest
         try:
             created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
+                tzinfo=UTC
             )
-            age_hours = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
+            age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
             if age_hours < interval_hours:
-                logging.info(
+                logger.info(
                     "Latest DB message is fresh (age=%.1fh). Applying: %s",
                     age_hours,
                     content,
@@ -47,7 +49,7 @@ async def update_status(bot: commands.Bot) -> None:
                 await _apply_status(bot, content)
                 return
         except (ValueError, TypeError):
-            logging.warning("Could not parse created_at timestamp: %s", created_at_str)
+            logger.warning("Could not parse created_at timestamp: %s", created_at_str)
 
     status_model = status_config.get("model")
     if status_model:
@@ -59,19 +61,19 @@ async def update_status(bot: commands.Bot) -> None:
                 await _apply_status(bot, generated)
                 return
         except Exception:
-            logging.exception(
+            logger.exception(
                 "Status generation failed, falling back to DB random or config"
             )
 
     random_msg = get_random_message()
     if random_msg:
-        logging.info("Falling back to random DB message: %s", random_msg)
+        logger.info("Falling back to random DB message: %s", random_msg)
         await _apply_status(bot, random_msg)
         return
 
     fallback = config.get("status_message") or ""
     if fallback:
-        logging.info("Falling back to config status_message: %s", fallback)
+        logger.info("Falling back to config status_message: %s", fallback)
         await _apply_status(bot, fallback)
 
 
@@ -104,4 +106,4 @@ async def _run_initial_and_start(
     await bot.wait_until_ready()
     await update_status(bot)
     loop.start()
-    logging.info("Status scheduler started (interval=1h)")
+    logger.info("Status scheduler started (interval=1h)")

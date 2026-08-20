@@ -9,11 +9,11 @@ from src.bot import (
     user_has_permission,
 )
 from src.commands.slashes.abnt import (
-    parse_abnt_evaluation_json,
     build_abnt_result_message,
+    parse_abnt_evaluation_json,
 )
-from src.helpers.content import get_completion_text
 from src.helpers.attachments import attachment_is_supported_word_document
+from src.helpers.content import get_completion_text
 
 
 @dataclass
@@ -202,10 +202,10 @@ def test_parse_abnt_evaluation_json_normalizes_score_and_improvements() -> None:
 def test_parse_abnt_evaluation_json_rejects_invalid_payload() -> None:
     try:
         parse_abnt_evaluation_json('{"score": "alto", "improvements": []}')
-    except ValueError as exc:
+    except TypeError as exc:
         assert str(exc) == "invalid_score"
     else:
-        raise AssertionError("Expected ValueError for invalid score")
+        raise AssertionError("Expected TypeError for invalid score")
 
 
 def test_build_abnt_result_message_for_good_enough_score() -> None:

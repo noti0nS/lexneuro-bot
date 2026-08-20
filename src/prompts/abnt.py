@@ -58,6 +58,6 @@ def build_abnt_messages(
     user_prompt += f"\n\nDocumento:\n{document_text}"
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=user_prompt),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]

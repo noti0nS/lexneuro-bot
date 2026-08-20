@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands
@@ -25,7 +27,7 @@ def register_status_commands(
         _, created_at_str = latest
         try:
             return datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
+                tzinfo=UTC
             )
         except (ValueError, TypeError):
             return None
@@ -53,7 +55,7 @@ def register_status_commands(
         await interaction.response.send_message(
             "Regenerando status agora...", ephemeral=True
         )
-        logging.info(
+        logger.info(
             "Status reset triggered by admin (user ID: %s)", interaction.user.id
         )
         await update_status(discord_bot)
@@ -71,7 +73,7 @@ def register_status_commands(
         if latest_ts is None:
             remaining = interval_hours
         else:
-            age_hours = (datetime.now(timezone.utc) - latest_ts).total_seconds() / 3600
+            age_hours = (datetime.now(UTC) - latest_ts).total_seconds() / 3600
             remaining = max(0.0, interval_hours - age_hours)
 
         hours = int(remaining)

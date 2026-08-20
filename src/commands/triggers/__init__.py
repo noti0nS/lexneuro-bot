@@ -24,4 +24,6 @@ def get_handler(name: str) -> TriggerHandler | None:
     return _registry.get(name)
 
 
-from . import capture  # noqa: E402, F401 — triggers @trigger registration  # pyright: ignore[reportUnusedImport]
+from . import (
+    capture,  # noqa: F401 — triggers @trigger registration  # pyright: ignore[reportUnusedImport]
+)

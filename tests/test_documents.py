@@ -4,7 +4,7 @@ from zipfile import ZipFile
 import pytest
 from docx import Document as DocxDocument
 from odf.opendocument import OpenDocumentText
-from odf.text import P, H
+from odf.text import H, P
 
 from src.helpers.documents import DocxProcessor, OdtProcessor, get_processor
 

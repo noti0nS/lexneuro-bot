@@ -1,5 +1,7 @@
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
 import re
 from html.parser import HTMLParser
 from typing import Any, override
@@ -8,6 +10,7 @@ import httpx
 
 try:
     import ddgs
+    from ddgs.exceptions import DDGSException
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError("ddgs is required for /pesquisa") from exc
 
@@ -27,7 +30,7 @@ async def search_topics(
         topic_results: list[dict[str, Any]] = []
         try:
 
-            def _search():
+            def _search(topic: str = topic):
                 with ddgs.DDGS() as duck_search:
                     return list(duck_search.text(topic, max_results=max_results))
 
@@ -40,8 +43,8 @@ async def search_topics(
                         "snippet": result.get("body", ""),
                     }
                 )
-        except Exception as e:
-            logging.warning("Web search failed for topic '%s': %s", topic, e)
+        except (DDGSException, httpx.HTTPError) as e:
+            logger.warning("Web search failed for topic '%s': %s", topic, e)
 
         results[topic] = topic_results
 
@@ -111,5 +114,5 @@ async def fetch_page_content(
         return parser.get_text()[:max_chars]
 
     except Exception:
-        logging.warning("Failed to fetch page content from %s", url, exc_info=True)
+        logger.warning("Failed to fetch page content from %s", url, exc_info=True)
         return ""

@@ -1,5 +1,7 @@
 import logging
-from datetime import date, datetime, timedelta
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from typing import Any, cast, final, override
 
@@ -35,7 +37,7 @@ PYTHON_WEEKDAY: dict[str, int] = {
 
 def parse_test_date(raw: str) -> date:
     try:
-        return datetime.strptime(raw, "%Y-%m-%d").date()
+        return date.fromisoformat(raw)
     except ValueError as exc:
         raise ValueError("Use o formato YYYY-MM-DD (ex: 2026-06-15).") from exc
 
@@ -81,11 +83,11 @@ async def _generate_cronograma_content(
     finish_reason = None
     curr_content = ""
 
-    request_started_at = datetime.now().timestamp()
+    request_started_at = datetime.now(tz=UTC).timestamp()
     first_chunk_logged = False
 
     try:
-        logging.info(
+        logger.info(
             "Cronograma LLM stream starting (user ID: %s, model: %s)",
             user_id,
             model_name,
@@ -104,10 +106,10 @@ async def _generate_cronograma_content(
             new_content = choice.delta.content or ""
 
             if not first_chunk_logged and new_content:
-                logging.info(
+                logger.info(
                     "Cronograma LLM first chunk (user ID: %s, elapsed: %.2fs)",
                     user_id,
-                    datetime.now().timestamp() - request_started_at,
+                    datetime.now(tz=UTC).timestamp() - request_started_at,
                 )
                 first_chunk_logged = True
 
@@ -126,8 +128,8 @@ async def _generate_cronograma_content(
         if curr_content:
             response_chunks.append(curr_content)
 
-        elapsed = datetime.now().timestamp() - request_started_at
-        logging.info(
+        elapsed = datetime.now(tz=UTC).timestamp() - request_started_at
+        logger.info(
             "Cronograma LLM stream completed (user ID: %s, chunks: %s, elapsed: %.2fs)",
             user_id,
             len(response_chunks),
@@ -135,16 +137,17 @@ async def _generate_cronograma_content(
         )
 
     except APIError as exc:
-        logging.exception(
+        logger.warning(
             "Provider error while streaming cronograma: %s",
             get_provider_error_detail(exc),
         )
+        logger.exception("Provider error while streaming cronograma")
         await msg_target.send(
             f"O provedor do modelo interrompeu a geração. Detalhe: `{str(exc)[:500]}`"
         )
         return None
     except Exception:
-        logging.exception("Error while streaming cronograma")
+        logger.exception("Error while streaming cronograma")
         await msg_target.send(
             "Não consegui gerar o cronograma agora. Verifique os logs."
         )
@@ -211,14 +214,14 @@ class WeekdaySelectView(discord.ui.View):
         try:
             await self._process_selection(interaction)
         except Exception:
-            logging.exception("Unexpected error in cronograma weekday confirm")
+            logger.exception("Unexpected error in cronograma weekday confirm")
             try:
                 await interaction.followup.send("Erro inesperado. Tente novamente.")
             except discord.HTTPException:
                 pass
 
     async def _process_selection(self, interaction: discord.Interaction) -> None:
-        logging.info(
+        logger.info(
             "Cronograma weekday confirm (user ID: %s, model: %s)",
             interaction.user.id,
             self._state.curr_model,
@@ -245,7 +248,7 @@ class WeekdaySelectView(discord.ui.View):
         cronograma_config = state_config.get("cronograma", {})
         days_before_test = cronograma_config.get("days_before_test", 3)
 
-        today = datetime.now().date()
+        today = datetime.now(tz=UTC).date()
         calendar_dates, error = compute_study_window(
             test_date=self._test_date,
             today=today,
@@ -305,7 +308,7 @@ class CronogramaFormatView(FormatSelectView):
 
         state_config = self._state.config
 
-        logging.info(
+        logger.info(
             "Cronograma LLM config (user ID: %s, model: %s, format: %s)",
             interaction.user.id,
             self._state.curr_model,
@@ -373,7 +376,7 @@ def register_cronograma_command(
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 
-        today = datetime.now().date()
+        today = datetime.now(tz=UTC).date()
         if parsed_date <= today:
             await interaction.response.send_message(
                 "A data da prova deve ser no futuro.", ephemeral=True

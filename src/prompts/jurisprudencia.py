@@ -98,6 +98,6 @@ def build_jurisprudencia_messages(
         system_prompt += "\n\n" + JURIS_DOCUMENT_TOOL_SECTION
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=user_message),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
     ]

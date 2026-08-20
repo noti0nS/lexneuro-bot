@@ -1,6 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
@@ -118,7 +120,7 @@ def register_pesquisa_command(
             ephemeral=True,
         )
 
-        logging.info(
+        logger.info(
             "Pesquisa started (user ID: %s, tema: %r, extensao: %s, paginas: %s, auto_refinar: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             tema[:80],
@@ -142,7 +144,7 @@ def register_pesquisa_command(
                 await interaction.followup.send("O arquivo anexado parece estar vazio.")
                 return
             except Exception:
-                logging.exception(
+                logger.exception(
                     "Pesquisa file extraction failed (user ID: %s)",
                     interaction.user.id,
                 )
@@ -155,7 +157,7 @@ def register_pesquisa_command(
             extended_tools = setup.tools
             on_extra_tool = setup.on_extra_tool
 
-            logging.info(
+            logger.info(
                 "Pesquisa file extracted (user ID: %s, filename: %s, chunks: %s, chars: %s)",
                 interaction.user.id,
                 fonte.filename,
@@ -184,7 +186,7 @@ def register_pesquisa_command(
         reasoning_effort: str | None = "high" if refinement_enabled else None
 
         raw_output = ""
-        request_started_at = datetime.now().timestamp()
+        request_started_at = datetime.now(tz=UTC).timestamp()
 
         try:
             async with llm_error_handling(interaction, "Pesquisa"):
@@ -195,7 +197,7 @@ def register_pesquisa_command(
                         {"role": "user", "content": build_refinement_message(dominio)}
                     )
 
-                    logging.info(
+                    logger.info(
                         "Pesquisa refinement started (user ID: %s, model: %s)",
                         interaction.user.id,
                         curr_model,
@@ -220,7 +222,7 @@ def register_pesquisa_command(
                         messages.append(
                             {"role": "assistant", "content": refinement_text}
                         )
-                        logging.info(
+                        logger.info(
                             "Pesquisa refinement completed (user ID: %s, length: %s)",
                             interaction.user.id,
                             len(refinement_text),
@@ -241,7 +243,7 @@ def register_pesquisa_command(
                             }
                         )
                     else:
-                        logging.warning(
+                        logger.warning(
                             "Pesquisa refinement returned empty output (user ID: %s)",
                             interaction.user.id,
                         )
@@ -262,8 +264,8 @@ def register_pesquisa_command(
                     httpx_client=httpx_client,
                 )
 
-                elapsed = datetime.now().timestamp() - request_started_at
-                logging.info(
+                elapsed = datetime.now(tz=UTC).timestamp() - request_started_at
+                logger.info(
                     "Pesquisa LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     curr_model,
@@ -283,7 +285,7 @@ def register_pesquisa_command(
             file_bytes, ext = generate_document(raw_output, tema, formato_valor)
             filename = build_filename("pesquisa", tema, interaction.user.id, ext)
         except Exception:
-            logging.exception("Error while generating document file")
+            logger.exception("Error while generating document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."

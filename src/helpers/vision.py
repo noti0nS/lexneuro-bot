@@ -1,6 +1,8 @@
 import base64
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 import re
 from typing import Any
 
@@ -9,7 +11,6 @@ import httpx
 
 from ..config import get_vision_model_chain
 from .llm import execute_chat_completion
-
 
 VISION_PROMPT = (
     "You will be shown one or more images, in order. "
@@ -67,7 +68,7 @@ async def describe_images(
             )
             break
         except Exception as exc:  # noqa: BLE001
-            logging.warning(
+            logger.warning(
                 "Vision model %s failed, trying next in chain... Error: %s",
                 model_attempt,
                 exc,
@@ -81,7 +82,7 @@ async def describe_images(
     raw = _strip_think_blocks(raw)
 
     if not raw.strip():
-        logging.warning(
+        logger.warning(
             "Vision model '%s' returned an empty response for %s image(s). "
             + "This often means the model or provider could not process the image "
             + "(e.g. the model is not multimodal, or the image was rejected).",
@@ -100,8 +101,7 @@ def _strip_fences(text: str) -> str:
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
+        cleaned = cleaned.removesuffix("```")
         cleaned = cleaned.strip()
     return cleaned
 
@@ -130,7 +130,7 @@ def _parse_vision_descriptions(raw: str, expected: int) -> list[str]:
     parsed = _try_json_array(cleaned)
     if parsed is not None:
         if len(parsed) != expected:
-            logging.warning(
+            logger.warning(
                 "Vision model returned %s descriptions for %s images; using as-is.",
                 len(parsed),
                 expected,
@@ -139,7 +139,7 @@ def _parse_vision_descriptions(raw: str, expected: int) -> list[str]:
 
     # Model answered in prose instead of JSON.
     if cleaned:
-        logging.warning(
+        logger.warning(
             "Vision model did not return JSON (raw=%r); attempting prose fallback.",
             cleaned[:200],
         )

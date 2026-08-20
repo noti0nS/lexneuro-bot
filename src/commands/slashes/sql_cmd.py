@@ -1,5 +1,7 @@
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 import discord
@@ -104,7 +106,7 @@ def register_sql_command(
         if len(sql_text) > max_sql_chars:
             original_length = len(sql_text)
             sql_text = sql_text[:max_sql_chars]
-            logging.warning(
+            logger.warning(
                 "SQL text truncated (user ID: %s, original length: %s)",
                 interaction.user.id,
                 original_length,
@@ -112,7 +114,7 @@ def register_sql_command(
 
         await interaction.response.send_message("Analisando a SQL...", ephemeral=True)
 
-        logging.info(
+        logger.info(
             "SQL command (user ID: %s, dialeto: %s, chars: %s)",
             interaction.user.id,
             dialeto_valor,
@@ -126,7 +128,7 @@ def register_sql_command(
                     consulta=sql_text,
                     dialeto=dialeto_valor,
                 )
-                logging.info(
+                logger.info(
                     "SQL LLM request started (user ID: %s, model: %s)",
                     interaction.user.id,
                     state.curr_model,
@@ -143,7 +145,7 @@ def register_sql_command(
                     f"SQL LLM request still running (user ID: {interaction.user.id})",
                 )
                 raw_output = get_completion_text(completion)
-                logging.info(
+                logger.info(
                     "SQL LLM request completed (user ID: %s)",
                     interaction.user.id,
                 )

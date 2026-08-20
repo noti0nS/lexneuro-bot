@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
@@ -9,11 +11,11 @@ import httpx
 from discord.ext import commands
 
 from ...helpers.async_utils import await_task_with_heartbeats
-from ...helpers.content import get_completion_text
 from ...helpers.attachments import (
     attachment_is_supported_word_document,
     read_word_attachment,
 )
+from ...helpers.content import get_completion_text
 from ...helpers.llm import (
     LLMAborted,
     execute_chat_completion,
@@ -29,20 +31,20 @@ def parse_abnt_evaluation_json(raw_content: str) -> tuple[float, list[str]]:
         raise ValueError("invalid_json") from exc
 
     if not isinstance(payload, dict):
-        raise ValueError("invalid_payload")
+        raise TypeError("invalid_payload")
 
     score = payload.get("score")
     if isinstance(score, bool) or not isinstance(score, (int, float)):
-        raise ValueError("invalid_score")
+        raise TypeError("invalid_score")
 
     improvements = payload.get("improvements")
     if not isinstance(improvements, list):
-        raise ValueError("invalid_improvements")
+        raise TypeError("invalid_improvements")
 
     normalized_improvements = []
     for improvement in improvements:
         if not isinstance(improvement, str):
-            raise ValueError("invalid_improvement_item")
+            raise TypeError("invalid_improvement_item")
 
         clean_text = improvement.strip()
         if clean_text:
@@ -119,7 +121,7 @@ def register_abnt_command(
             )
             return
 
-        logging.info(
+        logger.info(
             "ABNT attachment read started (user ID: %s, file: %s)",
             interaction.user.id,
             document.filename,
@@ -133,13 +135,13 @@ def register_abnt_command(
             )
             return
         except Exception:
-            logging.exception("Error while reading ABNT attachment")
+            logger.exception("Error while reading ABNT attachment")
             await interaction.response.send_message(
                 "Não consegui ler o anexo. Tente novamente com um arquivo `.docx` ou `.odt` válido.",
                 ephemeral=True,
             )
             return
-        logging.info(
+        logger.info(
             "ABNT attachment read completed (user ID: %s, file: %s, chars: %s)",
             interaction.user.id,
             document.filename,
@@ -161,7 +163,7 @@ def register_abnt_command(
             ephemeral=is_dm,
         )
 
-        logging.info(
+        logger.info(
             "ABNT command received (user ID: %s, file: %s, chars: %s)",
             interaction.user.id,
             document.filename,
@@ -169,7 +171,7 @@ def register_abnt_command(
         )
 
         raw_output = ""
-        request_started_at = datetime.now().timestamp()
+        request_started_at = datetime.now(tz=UTC).timestamp()
         try:
             async with llm_error_handling(interaction, "ABNT"):
                 messages = build_abnt_messages(
@@ -177,7 +179,7 @@ def register_abnt_command(
                     document_text=document_text,
                     instructions=instructions,
                 )
-                logging.info(
+                logger.info(
                     "ABNT LLM request started (user ID: %s, model: %s, file: %s, message_count: %s)",
                     interaction.user.id,
                     state.curr_model,
@@ -198,8 +200,8 @@ def register_abnt_command(
                         f"(user ID: {interaction.user.id}, model: {state.curr_model}, file: {document.filename})"
                     ),
                 )
-                elapsed = datetime.now().timestamp() - request_started_at
-                logging.info(
+                elapsed = datetime.now(tz=UTC).timestamp() - request_started_at
+                logger.info(
                     "ABNT LLM request completed (user ID: %s, model: %s, file: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     state.curr_model,
@@ -213,15 +215,15 @@ def register_abnt_command(
         try:
             score, improvements = parse_abnt_evaluation_json(raw_output)
             output = build_abnt_result_message(score, improvements)
-            logging.info(
+            logger.info(
                 "ABNT evaluation parsed (user ID: %s, file: %s, score: %.3f, improvements: %s)",
                 interaction.user.id,
                 document.filename,
                 score,
                 len(improvements),
             )
-        except ValueError as exc:
-            logging.warning(
+        except (ValueError, TypeError) as exc:
+            logger.warning(
                 "ABNT evaluation JSON parse failed (user ID: %s, file: %s, reason: %s, output_preview: %s)",
                 interaction.user.id,
                 document.filename,

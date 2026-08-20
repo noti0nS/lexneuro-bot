@@ -6,7 +6,6 @@ from typing import Any, TypedDict
 import yaml
 from openai import AsyncOpenAI
 
-
 DEFAULT_MAX_TEXT = 100000
 DEFAULT_MAX_MESSAGES = 25
 DEFAULT_MAX_ATTACHMENT_KB = 512

@@ -1,8 +1,10 @@
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
 import types
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import discord
@@ -31,7 +33,6 @@ from .config import (
 from .helpers.attachments import (
     read_attachment_text,
 )
-from .helpers.vision import describe_images
 from .helpers.content import sanitize_discord_markdown, split_long_text, strip_reasoning
 from .helpers.llm import (
     stream_chat_completion,
@@ -45,6 +46,7 @@ from .helpers.ui import (
     STREAMING_INDICATOR,
     TRIGGER_PREFIX,
 )
+from .helpers.vision import describe_images
 
 
 @dataclass
@@ -107,7 +109,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
     @discord_bot.event
     async def on_ready() -> None:
         if client_id := state.config.get("client_id"):
-            logging.info(
+            logger.info(
                 "\n\nBOT INVITE URL:\nhttps://discord.com/oauth2/authorize?client_id=%s&permissions=412317191168&scope=bot\n",
                 client_id,
             )
@@ -148,7 +150,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
             new_msg, bot_user, msg_nodes, limits, httpx_client, state.config
         )
 
-        logging.debug(
+        logger.debug(
             "Message received (user ID: %s, attachments: %s, conversation length: %s):\n%s",
             new_msg.author.id,
             len(new_msg.attachments),
@@ -157,10 +159,10 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         )
 
         messages.append(
-            dict(
-                role="system",
-                content=_build_system_prompt(state.config),
-            )
+            {
+                "role": "system",
+                "content": _build_system_prompt(state.config),
+            }
         )
 
         async with channel_lock:
@@ -194,7 +196,7 @@ async def _handle_trigger(
     try:
         await handler(message, args, state, httpx_client)
     except Exception:
-        logging.exception(
+        logger.exception(
             "Trigger command '%s' failed (user ID: %s)",
             cmd_name,
             message.author.id,
@@ -337,7 +339,7 @@ async def _build_conversation_history(
             content = node_text[: limits.max_text]
 
             if content != "":
-                messages.append(dict(content=content, role=curr_node.role))
+                messages.append({"content": content, "role": curr_node.role})
 
             if len(node_text) > limits.max_text:
                 user_warnings.add(f"⚠️ Max {limits.max_text:,} characters per message")
@@ -347,7 +349,7 @@ async def _build_conversation_history(
 
 
 def _build_system_prompt(config: dict[str, Any]) -> str:
-    now = datetime.now().astimezone()
+    now = datetime.now(tz=UTC).astimezone()
     system_prompt = (
         (config.get("system_prompt") or "")
         .replace("{date}", now.strftime("%B %d %Y"))
@@ -371,12 +373,12 @@ async def _stream_and_send_response(
     else:
         max_message_length = EMBED_DESCRIPTION_MAX_LENGTH - len(STREAMING_INDICATOR)
         response_embed = discord.Embed.from_dict(
-            dict(
-                fields=[
-                    dict(name=warning, value="", inline=False)
+            {
+                "fields": [
+                    {"name": warning, "value": "", "inline": False}
                     for warning in sorted(user_warnings)
                 ]
-            )
+            }
         )
 
     curr_content = finish_reason = None
@@ -384,12 +386,12 @@ async def _stream_and_send_response(
     response_contents: list[str] = []
     clean_response = ""
 
-    request_started_at = datetime.now().timestamp()
+    request_started_at = datetime.now(tz=UTC).timestamp()
     first_chunk_logged = False
 
     try:
         try:
-            logging.info(
+            logger.info(
                 "LLM streaming request started (user ID: %s, model: %s, message_count: %s, plain_mode: %s)",
                 new_msg.author.id,
                 state.curr_model,
@@ -405,7 +407,7 @@ async def _stream_and_send_response(
             except discord.HTTPException as e:
                 if e.status != 429:
                     raise
-                logging.debug(
+                logger.debug(
                     "Skipping typing indicator due to rate limit (channel=%s)",
                     new_msg.channel.id,
                 )
@@ -445,11 +447,11 @@ async def _stream_and_send_response(
                     if not first_chunk_logged and (
                         new_content != "" or finish_reason is not None
                     ):
-                        logging.info(
+                        logger.info(
                             "LLM streaming first chunk received (user ID: %s, model: %s, elapsed: %.2fs)",
                             new_msg.author.id,
                             model_used,
-                            datetime.now().timestamp() - request_started_at,
+                            datetime.now(tz=UTC).timestamp() - request_started_at,
                         )
                         first_chunk_logged = True
 
@@ -475,13 +477,13 @@ async def _stream_and_send_response(
                             new_msg, response_msgs, msg_nodes, embed=response_embed
                         )
 
-                logging.info(
+                logger.info(
                     "LLM streaming request completed (user ID: %s, model: %s, finish_reason: %s, chunks: %s, elapsed: %.2fs)",
                     new_msg.author.id,
                     state.curr_model,
                     finish_reason,
                     len(response_contents),
-                    datetime.now().timestamp() - request_started_at,
+                    datetime.now(tz=UTC).timestamp() - request_started_at,
                 )
 
             finally:
@@ -492,7 +494,7 @@ async def _stream_and_send_response(
             await new_msg.channel.send(
                 "O Discord está temporariamente indisponível. Tente novamente mais tarde. Status: https://discordstatus.com"
             )
-            logging.exception(
+            logger.exception(
                 "Discord 503 error while generating response (user ID: %s, model: %s)",
                 new_msg.author.id,
                 state.curr_model,
@@ -511,14 +513,14 @@ async def _stream_and_send_response(
                         "Retry-After",
                     )
                 }
-                logging.exception(
+                logger.exception(
                     "Discord 429 rate limit (user ID: %s, model: %s, headers: %s)",
                     new_msg.author.id,
                     state.curr_model,
                     rl_headers,
                 )
             else:
-                logging.exception(
+                logger.exception(
                     "Discord %s HTTP error while generating response (user ID: %s, model: %s)",
                     e.status,
                     new_msg.author.id,
@@ -526,7 +528,7 @@ async def _stream_and_send_response(
                 )
 
         except Exception:
-            logging.exception(
+            logger.exception(
                 "Error while generating response (user ID: %s, model: %s)",
                 new_msg.author.id,
                 state.curr_model,
@@ -589,7 +591,7 @@ async def process_attachments(
                     f"<file:{att.filename}>\n{text}\n</file:{att.filename}>"
                 )
             except Exception:
-                logging.warning(
+                logger.warning(
                     "Failed to read attachment (filename: %s, content_type: %s)",
                     att.filename,
                     att.content_type,
@@ -604,7 +606,7 @@ async def process_attachments(
                 image_attachments, config, httpx_client
             )
         except Exception:
-            logging.warning(
+            logger.warning(
                 "Failed to describe images (user ID: %s, count: %s)",
                 message.author.id,
                 len(image_attachments),
@@ -717,7 +719,7 @@ async def _resolve_parent_message(
                         ) or await curr_msg.channel.fetch_message(parent_msg_id)
 
     except (discord.NotFound, discord.HTTPException):
-        logging.debug(
+        logger.debug(
             "Could not fetch parent message (channel=%s)",
             curr_msg.channel.id,
         )

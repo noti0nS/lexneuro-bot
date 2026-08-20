@@ -3,6 +3,8 @@ import asyncio
 import json
 import logging
 
+logger = logging.getLogger(__name__)
+
 import discord
 
 from .bot import create_discord_bot
@@ -21,7 +23,7 @@ parser.add_argument("--config", "-c", default="config.yaml")
 async def main() -> None:
     load_config(parser.parse_args().config)
     config = get_config()
-    logging.info(
+    logger.info(
         "Loaded config:\n%s",
         json.dumps(
             mask_sensitive_config(config), indent=2, sort_keys=True, ensure_ascii=False
@@ -32,7 +34,7 @@ async def main() -> None:
     try:
         await discord_bot.start(get_bot_token(config))
     except discord.LoginFailure as exc:
-        logging.error(
+        logger.error(
             "Discord rejected the bot token. Check config.yaml bot_token (it must be the bot token, not the client secret) "
             + "and regenerate it if needed."
         )

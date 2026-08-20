@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -112,7 +114,7 @@ async def download_attachment_text(
         response = await httpx_client.get(attachment.url)
         response.raise_for_status()
     except Exception:
-        logging.exception(
+        logger.exception(
             "File download failed (user ID: %s, file: %s)",
             interaction.user.id,
             attachment.filename,

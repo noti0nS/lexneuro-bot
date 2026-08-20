@@ -1,6 +1,8 @@
 import asyncio
-import random
 import logging
+
+logger = logging.getLogger(__name__)
+import random
 
 from openai import APIError, AsyncOpenAI
 
@@ -110,16 +112,16 @@ async def generate_status_message(
 
         raw = get_completion_text(completion)
         if not raw or not raw.strip():
-            logging.warning("Status generation returned empty content")
+            logger.warning("Status generation returned empty content")
             return None
 
         result = raw.strip().strip("\"'").strip()[:MAX_STATUS_CHARS]
-        logging.info("Status generated: %s", result)
+        logger.info("Status generated: %s", result)
         return result
 
     except APIError:
-        logging.exception("Status generation failed with API error")
+        logger.exception("Status generation failed with API error")
         return None
     except Exception:
-        logging.exception("Status generation failed")
+        logger.exception("Status generation failed")
         return None

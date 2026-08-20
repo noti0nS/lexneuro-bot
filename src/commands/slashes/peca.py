@@ -1,8 +1,10 @@
 import asyncio
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import discord
@@ -27,7 +29,6 @@ from ...helpers.llm import (
 )
 from ...helpers.send import send_document_result
 from ...prompts.peca import build_peca_messages
-
 
 TIPO_CHOICES = [
     "Alvará",
@@ -156,7 +157,7 @@ def register_peca_command(
                 )
                 return
 
-            logging.info(
+            logger.info(
                 "Peça file download started (user ID: %s, file: %s)",
                 interaction.user.id,
                 fonte.filename,
@@ -173,7 +174,7 @@ def register_peca_command(
                 )
                 return
             except Exception:
-                logging.exception(
+                logger.exception(
                     "Peça file extraction failed (user ID: %s, file: %s)",
                     interaction.user.id,
                     fonte.filename,
@@ -188,7 +189,7 @@ def register_peca_command(
             peca_tools = setup.tools
             peca_on_extra_tool = setup.on_extra_tool
 
-            logging.info(
+            logger.info(
                 "Peça file extraction completed (user ID: %s, file: %s, chunks: %s, chars: %s)",
                 interaction.user.id,
                 fonte.filename,
@@ -201,7 +202,7 @@ def register_peca_command(
             ephemeral=True,
         )
 
-        logging.info(
+        logger.info(
             "Peça command started (user ID: %s, chars: %s, tipo: %r, area: %r, format: %s, has_file: %s)",
             interaction.user.id,
             len(combined_text),
@@ -220,13 +221,13 @@ def register_peca_command(
         )
 
         raw_output = ""
-        request_started_at = datetime.now().timestamp()
+        request_started_at = datetime.now(tz=UTC).timestamp()
 
         try:
             async with llm_error_handling(interaction, "Peça"):
                 if doc is not None:
                     for iteration in range(5):
-                        logging.info(
+                        logger.info(
                             "Peça LLM tool iteration %s/5 (user ID: %s, model: %s)",
                             iteration + 1,
                             interaction.user.id,
@@ -271,7 +272,7 @@ def register_peca_command(
                                     }
                                 )
                     else:
-                        logging.warning(
+                        logger.warning(
                             "Peça tool loop exhausted, forcing final call (user ID: %s)",
                             interaction.user.id,
                         )
@@ -290,7 +291,7 @@ def register_peca_command(
                         )
                         raw_output = get_completion_text(completion)
                 else:
-                    logging.info(
+                    logger.info(
                         "Peça LLM request starting (user ID: %s, model: %s)",
                         interaction.user.id,
                         curr_model,
@@ -310,8 +311,8 @@ def register_peca_command(
                     )
                     raw_output = get_completion_text(completion)
 
-                elapsed = datetime.now().timestamp() - request_started_at
-                logging.info(
+                elapsed = datetime.now(tz=UTC).timestamp() - request_started_at
+                logger.info(
                     "Peça LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     curr_model,
@@ -332,7 +333,7 @@ def register_peca_command(
             await interaction.followup.send(str(exc))
             return
         except Exception:
-            logging.exception("Error while generating document file")
+            logger.exception("Error while generating document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do documento. "
                 + "O conteúdo será enviado em mensagens."

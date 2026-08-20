@@ -37,6 +37,6 @@ def build_sql_messages(
     user_prompt = f"Analise e explique a query SQL abaixo:\n\n```sql\n{consulta}\n```"
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=user_prompt),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]

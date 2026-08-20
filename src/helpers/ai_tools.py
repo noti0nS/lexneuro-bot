@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
@@ -8,6 +10,7 @@ from typing import Any, cast
 import discord
 import httpx
 from openai.types.chat import ChatCompletionMessageToolCall
+
 from .async_utils import await_task_with_heartbeats
 from .attachments import (
     DocumentChunks,
@@ -21,8 +24,6 @@ from .search import fetch_page_content, search_topics
 
 class ContentFilterError(Exception):
     """Raised when the LLM content filter blocks generation."""
-
-    pass
 
 
 WEB_SEARCH_TOOL: list[dict[str, Any]] = [
@@ -283,7 +284,7 @@ async def run_research_loop(
 
     pages_fetched = 0
     for iteration in range(max_iterations):
-        logging.info(
+        logger.info(
             "Research LLM iteration %s/%s (user ID: %s, model: %s)",
             iteration + 1,
             max_iterations,
@@ -323,7 +324,7 @@ async def run_research_loop(
             tool_summary = [
                 f"{tc.function.name}({tc.function.arguments})" for tc in tool_calls
             ]
-            logging.info(
+            logger.info(
                 "Research tool calls requested (user ID: %s): %s",
                 user_id,
                 "; ".join(tool_summary),
@@ -352,7 +353,7 @@ async def run_research_loop(
                         continue
 
                     query = args.get("query", "")
-                    logging.info(
+                    logger.info(
                         "Research web_search (user ID: %s, query: %s)",
                         user_id,
                         query,
@@ -365,7 +366,7 @@ async def run_research_loop(
                         )
                         search_data = results.get(query, [])
                     except Exception:
-                        logging.exception(
+                        logger.exception(
                             "Research web search failed for query: %s", query
                         )
                         search_data = []
@@ -405,7 +406,7 @@ async def run_research_loop(
                         continue
 
                     url = args.get("url", "")
-                    logging.info(
+                    logger.info(
                         "Research fetch_page (user ID: %s, url: %s)",
                         user_id,
                         url,
@@ -470,14 +471,12 @@ async def run_research_loop(
 
         # Handle length (max_tokens reached)
         if choice.finish_reason == "length":
-            logging.warning("Research LLM reached max_tokens (user ID: %s)", user_id)
+            logger.warning("Research LLM reached max_tokens (user ID: %s)", user_id)
             return get_completion_text(completion)
 
         # Handle content_filter
         if choice.finish_reason == "content_filter":
-            logging.error(
-                "Research LLM content filter triggered (user ID: %s)", user_id
-            )
+            logger.error("Research LLM content filter triggered (user ID: %s)", user_id)
             raise ContentFilterError(
                 "A geração do documento foi bloqueada pelo filtro de conteúdo do provedor."
             )
@@ -487,7 +486,7 @@ async def run_research_loop(
         if raw_output:
             return raw_output
 
-    logging.warning(
+    logger.warning(
         "Research tool loop exhausted, forcing final generation (user ID: %s)",
         user_id,
     )

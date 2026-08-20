@@ -1,5 +1,7 @@
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
@@ -171,7 +173,7 @@ def register_json_command(
                 )
                 return
 
-            logging.info(
+            logger.info(
                 "JSON file download started (user ID: %s, file: %s)",
                 interaction.user.id,
                 arquivo.filename,
@@ -195,14 +197,14 @@ def register_json_command(
 
         max_chars = 100000
         if len(input_text) > max_chars:
-            logging.warning(
+            logger.warning(
                 "JSON input truncated (user ID: %s, original length: %s)",
                 interaction.user.id,
                 len(input_text),
             )
             input_text = input_text[:max_chars]
 
-        logging.info(
+        logger.info(
             "JSON command (user ID: %s, acao: %s, chars: %s)",
             interaction.user.id,
             acao_valor,

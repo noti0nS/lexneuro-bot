@@ -43,6 +43,6 @@ def build_regex_messages(
     user_prompt = "\n".join(lines)
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=user_prompt),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]

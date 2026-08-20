@@ -129,6 +129,6 @@ def build_peca_messages(
         system_prompt += "\n\n" + PECA_DOCUMENT_TOOL_SECTION
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=enunciado),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": enunciado},
     ]

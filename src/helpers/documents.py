@@ -2,14 +2,13 @@ from io import BytesIO
 from typing import Protocol, cast
 from zipfile import BadZipFile
 
+import discord
 import pandoc
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt
 from odf.opendocument import load as odf_load
 from odf.text import H, P
-
-import discord
 
 DOCUMENT_FORMAT_CHOICES = [
     discord.app_commands.Choice(name="Markdown (arquivo .md)", value="md"),

@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 import discord
@@ -27,7 +29,7 @@ def register_model_command(
             if user_is_admin:
                 state.curr_model = model
                 output = f"Model switched to: `{model}`"
-                logging.info(output)
+                logger.info(output)
             else:
                 output = "You don't have permission to change the model."
 

@@ -1,7 +1,9 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import override
 
 
@@ -25,4 +27,4 @@ def start_health_server() -> None:
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    logging.info("Health check server listening on port %d", port)
+    logger.info("Health check server listening on port %d", port)

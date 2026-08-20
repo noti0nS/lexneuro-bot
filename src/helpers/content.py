@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 _CODEHOLDER = "\x00"
@@ -40,7 +40,7 @@ def build_filename(
     safe = re.sub(r"[-\s]+", "_", safe) or prefix
     if len(safe) > max_len:
         safe = safe[:max_len]
-    epoch = int(datetime.now().timestamp())
+    epoch = int(datetime.now(tz=UTC).timestamp())
     return f"{prefix}_{safe}_{user_id}_{epoch}{ext}"
 
 
@@ -146,9 +146,7 @@ def sanitize_discord_markdown(text: str) -> str:
 
 def _clean_latex_block(m: re.Match[str]) -> str:
     content = m.group(0)
-    if content.startswith("$$"):
-        content = content[2:-2]
-    elif content.startswith("\\(") or content.startswith("\\["):
+    if content.startswith(("$$", "\\(", "\\[")):
         content = content[2:-2]
     content = re.sub(r"\\[a-zA-Z]+(?:\{[^}]*\})*", "", content)
     content = re.sub(r"[{}]", "", content)

@@ -1,5 +1,7 @@
 import contextlib
 import logging
+
+logger = logging.getLogger(__name__)
 from collections.abc import AsyncGenerator, AsyncIterable
 from typing import Any
 
@@ -41,7 +43,7 @@ async def execute_chat_completion(
         ) as e:
             if model_index == len(model_chain) - 1:
                 raise
-            logging.warning(
+            logger.warning(
                 "Model %s failed, falling back... Error: %s", model_attempt, e
             )
             continue
@@ -78,7 +80,7 @@ async def stream_chat_completion(
         ) as e:
             if model_index == len(model_chain) - 1:
                 raise
-            logging.warning(
+            logger.warning(
                 "Model %s failed, falling back... Error: %s", model_attempt, e
             )
             continue
@@ -96,7 +98,7 @@ async def stream_completion_to_channel(
     max_message_length = 2000
     first_chunk_logged = False
 
-    logging.info(
+    logger.info(
         "Streaming helper request started (model: %s, message_count: %s)",
         openai_config.get("model"),
         len(messages),
@@ -143,7 +145,7 @@ async def stream_completion_to_channel(
                 continue
 
         if not first_chunk_logged and (new_content != "" or finish_reason is not None):
-            logging.info(
+            logger.info(
                 "Streaming helper first chunk received (model: %s)",
                 openai_config.get("model"),
             )
@@ -167,7 +169,7 @@ async def stream_completion_to_channel(
         response_chunks.append(pending_content.strip())
         await channel.send(pending_content.strip())
 
-    logging.info(
+    logger.info(
         "Streaming helper request completed (model: %s, finish_reason: %s, chunks: %s)",
         openai_config.get("model"),
         finish_reason,
@@ -195,13 +197,13 @@ class LLMAborted(Exception):
 @contextlib.asynccontextmanager
 async def llm_error_handling(
     interaction: discord.Interaction, command_name: str
-) -> AsyncGenerator[None, None]:
+) -> AsyncGenerator[None]:
     from .ai_tools import ContentFilterError
 
     try:
         yield
     except ContentFilterError as exc:
-        logging.error(
+        logger.error(
             "%s LLM content filter triggered (user ID: %s)",
             command_name,
             interaction.user.id,
@@ -209,18 +211,19 @@ async def llm_error_handling(
         await interaction.followup.send(str(exc))
         raise LLMAborted() from exc
     except APIError as exc:
-        logging.exception(
+        logger.warning(
             "Provider error while generating %s: %s",
             command_name,
             get_provider_error_detail(exc),
         )
+        logger.exception("Provider error while generating %s", command_name)
         await interaction.followup.send(
             "O provedor do modelo interrompeu a geração. "
             + f"Detalhe do provedor: `{str(exc)[:500]}`"
         )
         raise LLMAborted() from exc
     except Exception:
-        logging.exception("Error while generating %s", command_name)
+        logger.exception("Error while generating %s", command_name)
         await interaction.followup.send(
             "Não consegui gerar o resultado agora. Verifique os logs e tente novamente."
         )

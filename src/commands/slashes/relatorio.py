@@ -1,6 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime
+
+logger = logging.getLogger(__name__)
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
@@ -151,7 +153,7 @@ def register_relatorio_command(
             ephemeral=True,
         )
 
-        logging.info(
+        logger.info(
             "Relatorio started (user ID: %s, titulo: %r, paginas: %s, pesquisar: %s, formato: %s, has_file: %s)",
             interaction.user.id,
             titulo[:80],
@@ -188,7 +190,7 @@ def register_relatorio_command(
                     )
                     return
                 except Exception:
-                    logging.exception(
+                    logger.exception(
                         "Relatorio file extraction failed (user ID: %s)",
                         interaction.user.id,
                     )
@@ -201,7 +203,7 @@ def register_relatorio_command(
                 extended_tools = setup.tools
                 on_extra_tool = setup.on_extra_tool
 
-                logging.info(
+                logger.info(
                     "Relatorio file stored as chunks (user ID: %s, filename: %s, chunks: %s)",
                     interaction.user.id,
                     fonte.filename,
@@ -211,7 +213,7 @@ def register_relatorio_command(
                 try:
                     extracted = await read_attachment_text(fonte, httpx_client)
                 except Exception:
-                    logging.exception(
+                    logger.exception(
                         "Relatorio file extraction failed (user ID: %s)",
                         interaction.user.id,
                     )
@@ -226,7 +228,7 @@ def register_relatorio_command(
                     )
                     return
 
-                logging.info(
+                logger.info(
                     "Relatorio file extracted (user ID: %s, chars: %s)",
                     interaction.user.id,
                     len(extracted),
@@ -236,7 +238,7 @@ def register_relatorio_command(
 
         relatorio_config = state.config.get("relatorio", {})
         autor = interaction.user.display_name
-        data_atual = _format_date_pt(datetime.now())
+        data_atual = _format_date_pt(datetime.now(tz=UTC))
 
         messages: list[dict[str, Any]] = build_relatorio_messages(
             titulo=titulo,
@@ -257,7 +259,7 @@ def register_relatorio_command(
         curr_model = model if model else state.curr_model
 
         raw_output = ""
-        request_started_at = datetime.now().timestamp()
+        request_started_at = datetime.now(tz=UTC).timestamp()
 
         try:
             async with llm_error_handling(interaction, "Relatório"):
@@ -281,7 +283,7 @@ def register_relatorio_command(
                         httpx_client=httpx_client,
                     )
                 else:
-                    logging.info(
+                    logger.info(
                         "Relatorio request started (user ID: %s, model: %s)",
                         interaction.user.id,
                         curr_model,
@@ -300,8 +302,8 @@ def register_relatorio_command(
                     )
                     raw_output = get_completion_text(completion)
 
-                elapsed = datetime.now().timestamp() - request_started_at
-                logging.info(
+                elapsed = datetime.now(tz=UTC).timestamp() - request_started_at
+                logger.info(
                     "Relatorio LLM request completed (user ID: %s, model: %s, elapsed: %.2fs)",
                     interaction.user.id,
                     curr_model,
@@ -321,7 +323,7 @@ def register_relatorio_command(
             file_bytes, ext = generate_document(raw_output, titulo, formato_valor)
             filename = build_filename("relatorio", titulo, interaction.user.id, ext)
         except Exception:
-            logging.exception("Error while generating relatorio document file")
+            logger.exception("Error while generating relatorio document file")
             await interaction.followup.send(
                 "Não consegui gerar o arquivo do relatório. "
                 + "O conteúdo será enviado em mensagens."

@@ -6,8 +6,8 @@ import discord
 from src.commands.slashes.peca import (
     AREA_CHOICES,
     TIPO_CHOICES,
-    filter_choices,
     area_autocomplete,
+    filter_choices,
     tipo_autocomplete,
 )
 from src.helpers.attachments import attachment_is_supported

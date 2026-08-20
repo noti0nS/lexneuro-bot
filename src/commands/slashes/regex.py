@@ -1,4 +1,7 @@
+import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 import discord
@@ -13,8 +16,6 @@ from ...helpers.llm import (
 )
 from ...helpers.send import send_followup_chunked
 from ...prompts.regex import build_regex_messages
-
-import asyncio
 
 
 def register_regex_command(
@@ -46,7 +47,7 @@ def register_regex_command(
 
         await interaction.response.send_message("Montando a regex...", ephemeral=True)
 
-        logging.info(
+        logger.info(
             "Regex command (user ID: %s, linguagem: %s, descricao: %r)",
             interaction.user.id,
             linguagem,
@@ -61,7 +62,7 @@ def register_regex_command(
                     exemplos=exemplos.strip() if exemplos else None,
                     linguagem=linguagem,
                 )
-                logging.info(
+                logger.info(
                     "Regex LLM request started (user ID: %s, model: %s)",
                     interaction.user.id,
                     state.curr_model,
@@ -78,7 +79,7 @@ def register_regex_command(
                     f"Regex LLM request still running (user ID: {interaction.user.id})",
                 )
                 raw_output = get_completion_text(completion)
-                logging.info(
+                logger.info(
                     "Regex LLM request completed (user ID: %s)",
                     interaction.user.id,
                 )

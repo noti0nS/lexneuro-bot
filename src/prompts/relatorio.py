@@ -105,6 +105,6 @@ def build_relatorio_messages(
     user_message = "\n\n".join(user_parts)
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=user_message),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
     ]

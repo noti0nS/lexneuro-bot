@@ -281,8 +281,8 @@ def build_pesquisa_messages(
         system_prompt += "\n\n" + DOCUMENT_TOOL_SECTION
 
     return [
-        dict(role="system", content=system_prompt),
-        dict(role="user", content=tema),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": tema},
     ]
 
 

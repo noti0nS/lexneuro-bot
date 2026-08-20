@@ -1,4 +1,6 @@
 import logging
+
+logger = logging.getLogger(__name__)
 import re
 from io import BytesIO
 
@@ -6,7 +8,6 @@ import discord
 import httpx
 
 from ...helpers.render import detect_language_name, render_code_image
-
 from . import trigger
 
 _CODE_FENCE_RE = re.compile(
@@ -39,7 +40,7 @@ async def handle_capture(
             resp = await httpx_client.get(first.url)
             resp.raise_for_status()
         except Exception:
-            logging.exception(
+            logger.exception(
                 "Trigger capture: failed to download attachment (user ID: %s)",
                 message.author.id,
             )
@@ -58,7 +59,7 @@ async def handle_capture(
 
     max_lines = state.config.get("capture", {}).get("max_lines", 200)  # pyright: ignore[reportAttributeAccessIssue]
 
-    logging.info(
+    logger.info(
         "Trigger capture (user ID: %s, chars: %s, max_lines: %s)",
         message.author.id,
         len(code),
@@ -71,7 +72,7 @@ async def handle_capture(
             code, max_lines=max_lines, lang=lang_override, filename=att_filename
         )
     except Exception:
-        logging.exception(
+        logger.exception(
             "Trigger capture: render failed (user ID: %s)",
             message.author.id,
         )
