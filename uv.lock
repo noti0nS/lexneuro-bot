@@ -918,7 +918,7 @@ requires-dist = [
     { name = "odfpy", specifier = ">=1.4.1" },
     { name = "openai", specifier = ">=2.38.0" },
     { name = "pandoc", specifier = ">=2.4" },
-    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "pygments", specifier = ">=2.20.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
