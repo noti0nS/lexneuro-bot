@@ -102,6 +102,7 @@ async def generate_status_message(
                     messages,
                     stream=False,
                     max_tokens=MAX_STATUS_CHARS,
+                    reasoning_effort="none",
                 )
             )
         )
