@@ -95,6 +95,13 @@ models:
 
   ollama/llama4:
 
+vision_models:
+  # Vision model aliases with fallback chains (same behavior as `models`).
+  # Used to pre-process/describe attached images before the main model sees them.
+  brain:
+    - openai/gpt-4o
+    - openai/gpt-4o-mini
+
 abnt:
   max_document_kb: 512
 

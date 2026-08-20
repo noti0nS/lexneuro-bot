@@ -78,10 +78,18 @@ def get_bot_token(config: dict[str, Any]) -> str:
 
 def get_model_chain(config: dict[str, Any], model_name: str) -> list[str]:
     models_dict = config.get("models", {})
-    entry = models_dict.get(model_name)
+    vision_dict = config.get("vision_models", {})
+    entry = models_dict.get(model_name) or vision_dict.get(model_name)
     if isinstance(entry, list):
         return entry
     return [model_name]
+
+
+def get_default_vision_model(config: dict[str, Any]) -> str | None:
+    vision_dict = config.get("vision_models")
+    if not vision_dict:
+        return None
+    return next(iter(vision_dict))
 
 
 _openai_clients: dict[tuple[str, str], AsyncOpenAI] = {}
@@ -107,7 +115,11 @@ def get_openai_config(
         openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         _openai_clients[cache_key] = openai_client
 
-    model_parameters = config["models"].get(provider_slash_model, None)
+    model_parameters = (
+        config.get("models", {}).get(provider_slash_model)
+        or config.get("vision_models", {}).get(provider_slash_model)
+        or None
+    )
     extra_body = (provider_config.get("extra_body") or {}) | (
         model_parameters or {}
     ) or None

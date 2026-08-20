@@ -26,10 +26,12 @@ from .commands.triggers import get_handler
 from .config import (
     Limits,
     get_config,
+    get_default_vision_model,
 )
 from .helpers.attachments import (
     read_attachment_text,
 )
+from .helpers.vision import describe_images
 from .helpers.content import sanitize_discord_markdown
 from .helpers.llm import (
     stream_chat_completion,
@@ -59,11 +61,13 @@ class MsgNode:
 class AttachmentResult:
     good_attachments: list[discord.Attachment]
     doc_texts: list[str]
+    image_descriptions: list[str]
     has_bad_attachments: bool
+    warnings: set[str]
 
     @classmethod
     def empty(cls) -> "AttachmentResult":
-        return cls([], [], False)
+        return cls([], [], [], False, set())
 
 
 def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands.Bot:
@@ -141,7 +145,7 @@ def create_discord_bot(initial_config: dict[str, Any] | None = None) -> commands
         limits = Limits.from_config(state.config)
 
         messages, user_warnings = await _build_conversation_history(
-            new_msg, bot_user, msg_nodes, limits, httpx_client
+            new_msg, bot_user, msg_nodes, limits, httpx_client, state.config
         )
 
         logging.debug(
@@ -298,6 +302,7 @@ async def _build_conversation_history(
     msg_nodes: dict[int, MsgNode],
     limits: Limits,
     httpx_client: httpx.AsyncClient,
+    config: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], set[str]]:
     messages: list[dict[str, Any]] = []
     user_warnings: set[str] = set()
@@ -313,10 +318,12 @@ async def _build_conversation_history(
 
                 if is_primary:
                     att_result = await _process_attachments(
-                        curr_msg, limits, httpx_client
+                        curr_msg, limits, httpx_client, config
                     )
                 else:
                     att_result = AttachmentResult.empty()
+
+                user_warnings |= att_result.warnings
 
                 _assemble_node_content(
                     curr_msg, bot_user, curr_node, att_result, is_primary
@@ -536,17 +543,36 @@ async def _process_attachments(
     message: discord.Message,
     limits: Limits,
     httpx_client: httpx.AsyncClient,
+    config: dict[str, Any],
 ) -> AttachmentResult:
-    good_attachments = [
+    candidates = message.attachments[: limits.max_file_attachments]
+
+    def _within_size(att: discord.Attachment) -> bool:
+        return (att.size / 1024) <= limits.max_attachment_kb
+
+    doc_attachments = [
         att
-        for att in message.attachments[: limits.max_file_attachments]
+        for att in candidates
         if (ct := att.content_type)
         and not any(ct.startswith(kind) for kind in ("audio/", "video/", "image/"))
-        and (att.size / 1024) <= limits.max_attachment_kb
+        and _within_size(att)
     ]
 
+    vision_model = get_default_vision_model(config)
+    image_attachments = (
+        [
+            att
+            for att in candidates
+            if (ct := att.content_type)
+            and ct.startswith("image/")
+            and _within_size(att)
+        ]
+        if vision_model is not None
+        else []
+    )
+
     doc_texts: list[str] = []
-    for att in good_attachments:
+    for att in doc_attachments:
         if (ct := att.content_type) and ct.startswith("text/"):
             resp = await httpx_client.get(att.url)
             text = resp.text
@@ -565,10 +591,33 @@ async def _process_attachments(
                     exc_info=True,
                 )
 
+    image_descriptions: list[str] = []
+    warnings: set[str] = set()
+    if vision_model is not None and image_attachments:
+        try:
+            image_descriptions = await describe_images(
+                image_attachments, config, httpx_client
+            )
+        except Exception:
+            logging.warning(
+                "Failed to describe images (user ID: %s, count: %s)",
+                message.author.id,
+                len(image_attachments),
+                exc_info=True,
+            )
+            warnings.add("⚠️ Não consegui processar a(s) imagem(ns) anexada(s)")
+            image_attachments = []
+
+    processed = len(doc_attachments) + len(image_attachments)
+    unused = len(message.attachments) - processed
+    has_bad_attachments = unused > 0
+
     return AttachmentResult(
-        good_attachments=good_attachments,
+        good_attachments=doc_attachments + image_attachments,
         doc_texts=doc_texts,
-        has_bad_attachments=len(message.attachments) > len(good_attachments),
+        image_descriptions=image_descriptions,
+        has_bad_attachments=has_bad_attachments,
+        warnings=warnings,
     )
 
 
@@ -581,7 +630,9 @@ def _assemble_node_content(
 ) -> None:
     curr_node.role = "assistant" if message.author == bot_user else "user"
 
-    text = _extract_message_text(message, bot_user, att_result.doc_texts)
+    text = _extract_message_text(
+        message, bot_user, att_result.doc_texts, att_result.image_descriptions
+    )
 
     if curr_node.role == "user" and text:
         text = f"<@{message.author.id}>: {text}"
@@ -686,6 +737,7 @@ def _extract_message_text(
     message: discord.Message,
     bot_user: discord.ClientUser,
     doc_texts: list[str],
+    image_descriptions: list[str] | None = None,
 ) -> str:
     cleaned_content = message.content.removeprefix(bot_user.mention).lstrip()
 
@@ -709,9 +761,21 @@ def _extract_message_text(
         )
     ]
 
-    return "\n".join(
+    text_parts = (
         ([cleaned_content] if cleaned_content else [])
         + embed_texts
         + component_texts
         + doc_texts
     )
+
+    if not image_descriptions:
+        return "\n".join(text_parts)
+
+    prompt = "\n".join(text_parts) or ""
+    lines = ["USER_PROMPT:", prompt, ""]
+    for index, description in enumerate(image_descriptions, start=1):
+        lines.append(f"IMAGE#{index}")
+        lines.append(description)
+        lines.append("")
+
+    return "\n".join(lines).rstrip("\n")

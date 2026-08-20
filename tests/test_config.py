@@ -1,9 +1,44 @@
 from src.config import (
     build_openai_chat_completion_kwargs,
     get_bot_token,
+    get_default_vision_model,
+    get_model_chain,
     get_openai_config,
     mask_sensitive_config,
 )
+
+
+def test_get_model_chain_resolves_vision_models_entry() -> None:
+    config = {
+        "models": {"openai/gpt-4o": {}},
+        "vision_models": {"vision/brain": ["openai/gpt-4o", "openai/gpt-4o-mini"]},
+    }
+    assert get_model_chain(config, "vision/brain") == [
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+    ]
+
+
+def test_get_openai_config_merges_vision_models_params() -> None:
+    config = {
+        "providers": {
+            "openai": {
+                "base_url": "https://api.example.com/v1",
+                "api_key": "abc",
+            }
+        },
+        "models": {},
+        "vision_models": {"openai/gpt-vision": {"max_tokens": 200}},
+    }
+    _, openai_config = get_openai_config(config, "openai/gpt-vision")
+    assert openai_config["model"] == "gpt-vision"
+    assert openai_config["extra_body"] == {"max_tokens": 200}
+
+
+def test_get_default_vision_model_returns_first_key_or_none() -> None:
+    config = {"vision_models": {"vision/brain": ["openai/gpt-4o"]}}
+    assert get_default_vision_model(config) == "vision/brain"
+    assert get_default_vision_model({"models": {}}) is None
 
 
 def test_get_bot_token_raises_when_missing() -> None:

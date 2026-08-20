@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "allow",
+    "bash": {
+      "*": "allow",
+      "git *": "allow",
+      "git commit*": "ask",
+      "git push*": "deny",
+      "rm *": "ask",
+      "rmdir *": "ask",
+      "Remove-Item*": "ask"
+    },
+    "webfetch": "allow",
+    "read": {
+      "*": "allow",
+      "config.yaml": "deny",
+      "litellm_config.yaml": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      "config.yaml": "deny",
+      ".env*": "deny",
+      "**/*.key": "deny",
+      "**/ssh-key*": "deny"
+    },
+    "doom_loop": "ask",
+    "external_directory": "deny"
+  }
+}

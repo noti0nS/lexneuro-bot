@@ -22,7 +22,7 @@ _HELP_TEXT = """\
 **`/help`** — Esta mensagem.
 
 ## Chat com IA
-Mencione **@LexNeuro** ou **responda a uma mensagem dele** para conversar com o modelo de linguagem. O bot mantém o contexto da conversa por reply chain.
+Mencione **@LexNeuro** ou **responda a uma mensagem dele** para conversar com o modelo de linguagem. O bot mantém o contexto da conversa por reply chain. Se `vision_models` estiver configurado, imagens anexadas são descritas automaticamente (via modelo de visão) e repassadas ao modelo principal.
 
 ## Trigger commands
 Use o prefixo **`lex!`** (sem mencionar o bot):
