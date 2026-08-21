@@ -64,7 +64,7 @@ async def describe_images(
     for model_attempt in vision_chain:
         try:
             completion = await execute_chat_completion(
-                config, model_attempt, messages, stream=False
+                config, model_attempt, messages, stream=False, vision=True
             )
             break
         except Exception as exc:  # noqa: BLE001

@@ -22,6 +22,8 @@ async def execute_chat_completion(
     config: dict[str, Any],
     model_name: str,
     messages: list[dict[str, Any]],
+    *,
+    vision: bool = False,
     **kwargs: Any,
 ) -> ChatCompletion:
     """
@@ -31,7 +33,9 @@ async def execute_chat_completion(
 
     for model_index, model_attempt in enumerate(model_chain):
         try:
-            openai_client, openai_config = get_openai_config(config, model_attempt)
+            openai_client, openai_config = get_openai_config(
+                config, model_attempt, is_vision=vision
+            )
             kwargs.setdefault("stream", False)
             return await openai_client.chat.completions.create(
                 **build_openai_chat_completion_kwargs(openai_config, messages, **kwargs)

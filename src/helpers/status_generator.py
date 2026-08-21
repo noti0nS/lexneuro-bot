@@ -9,6 +9,7 @@ from openai import APIError, AsyncOpenAI
 from ..config import OpenAIRequestConfig, build_openai_chat_completion_kwargs
 from ..helpers.async_utils import await_task_with_heartbeats
 from ..helpers.content import get_completion_text
+from ..helpers.thinking import THINKING_NONE
 
 STATUS_PROMPTS = [
     (
@@ -102,7 +103,7 @@ async def generate_status_message(
                     messages,
                     stream=False,
                     max_tokens=MAX_STATUS_CHARS,
-                    reasoning_effort="none",
+                    thinking_level=THINKING_NONE,
                 )
             )
         )

@@ -6,6 +6,12 @@ from typing import Any, TypedDict
 import yaml
 from openai import AsyncOpenAI
 
+from .helpers.thinking import (
+    THINKING_NONE,
+    resolve_thinking_body,
+    uses_top_level_reasoning_effort,
+)
+
 DEFAULT_MAX_TEXT = 100000
 DEFAULT_MAX_MESSAGES = 25
 DEFAULT_MAX_ATTACHMENT_KB = 512
@@ -111,7 +117,10 @@ _openai_clients: dict[tuple[str, str], AsyncOpenAI] = {}
 
 
 def get_openai_config(
-    config: dict[str, Any], provider_slash_model: str
+    config: dict[str, Any],
+    provider_slash_model: str,
+    *,
+    is_vision: bool = False,
 ) -> tuple[AsyncOpenAI, OpenAIRequestConfig]:
     provider, model = provider_slash_model.removesuffix(":vision").split("/", 1)
     provider_config = config["providers"][provider]
@@ -135,9 +144,13 @@ def get_openai_config(
         or config.get("vision_models", {}).get(provider_slash_model)
         or None
     )
-    extra_body = (provider_config.get("extra_body") or {}) | (
-        model_parameters or {}
-    ) or None
+
+    extra_body = (provider_config.get("extra_body") or {}) | (model_parameters or {})
+    if is_vision:
+        extra_body = (extra_body or {}) | resolve_thinking_body(
+            provider, base_url, THINKING_NONE, model=model
+        )
+    extra_body = extra_body or None
 
     return openai_client, {
         "model": model,
@@ -167,6 +180,7 @@ def build_openai_chat_completion_kwargs(
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     reasoning_effort: str | None = None,
+    thinking_level: str | None = None,
 ) -> dict[str, Any]:
     needs_deepseek_reasoning = _needs_deepseek_reasoning(openai_config)
     if needs_deepseek_reasoning:
@@ -176,6 +190,9 @@ def build_openai_chat_completion_kwargs(
             else msg
             for msg in messages
         ]
+
+    provider = openai_config["provider"]
+    base_url = openai_config["base_url"]
 
     kwargs: dict[str, Any] = {
         "model": openai_config["model"],
@@ -195,11 +212,17 @@ def build_openai_chat_completion_kwargs(
         kwargs["tools"] = tools
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
-    if reasoning_effort is not None:
-        kwargs["reasoning_effort"] = reasoning_effort
-        if needs_deepseek_reasoning:
+    if reasoning_effort is not None or thinking_level is not None:
+        level = reasoning_effort or thinking_level
+        assert level is not None
+        if uses_top_level_reasoning_effort(provider, base_url):
+            kwargs["reasoning_effort"] = level
+        thinking_body = resolve_thinking_body(
+            provider, base_url, level, model=openai_config["model"]
+        )
+        if thinking_body:
             merged_extra = dict(openai_config.get("extra_body") or {})
-            merged_extra["thinking"] = {"type": "enabled"}
+            merged_extra.update(thinking_body)
             kwargs["extra_body"] = merged_extra
 
     return kwargs
