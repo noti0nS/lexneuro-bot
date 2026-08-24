@@ -114,6 +114,18 @@ cronograma:
   days_before_test: 3
   default_hours_per_day: 4
 
+# Web search used by /pesquisa, /jurisprudencia and /relatorio.
+# Tavily (AI-optimized, results carry a relevance score): free tier
+# 1,000 searches/month at https://tavily.com — an empty api_key uses
+# Tavily's rate-limited keyless mode. When disabled (or the whole
+# section absent), or when a Tavily search fails, the bot falls back
+# to DuckDuckGo (no key needed).
+# The api_key can also be set via the TAVILY_API_KEY environment variable.
+search:
+  tavily:
+    enabled: true
+    api_key:
+
 pesquisa:
   max_tool_iterations: 15
   search_results_per_topic: 8

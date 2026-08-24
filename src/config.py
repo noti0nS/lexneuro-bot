@@ -81,6 +81,29 @@ def get_bot_token(config: dict[str, Any]) -> str:
     return bot_token
 
 
+@dataclass
+class SearchSettings:
+    """Web search provider settings (`search` config section).
+
+    DuckDuckGo is always available; Tavily (enabled + optional key)
+    is preferred when configured, with DuckDuckGo as its fallback.
+    """
+
+    tavily_enabled: bool
+    tavily_api_key: str
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "SearchSettings":
+        search_config = config.get("search") or {}
+        tavily_config = search_config.get("tavily") or {}
+        return cls(
+            tavily_enabled=bool(tavily_config.get("enabled", False)),
+            tavily_api_key=os.getenv(
+                "TAVILY_API_KEY", tavily_config.get("api_key") or ""
+            ).strip(),
+        )
+
+
 def get_model_chain(config: dict[str, Any], model_name: str) -> list[str]:
     models_dict = config.get("models", {})
     vision_dict = config.get("vision_models", {})

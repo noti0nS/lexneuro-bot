@@ -176,7 +176,8 @@ página(s) — nem menos, nem mais — é obrigatório. Um documento com \
 contagem errada de páginas é uma falha grave.
 
 ### FERRAMENTAS DE PESQUISA:
-Você tem acesso a `web_search` (busca DuckDuckGo por artigos e fontes) \
+Você tem acesso a `web_search` (busca na web por artigos e fontes; \
+resultados podem incluir um campo `score` de 0 a 1 indicando relevância) \
 e `fetch_page` (conteúdo integral de URLs). Use múltiplas buscas com \
 diferentes ângulos. Reúna fontes antes de redigir. Priorize fontes \
 confiáveis e acadêmicas.

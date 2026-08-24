@@ -11,6 +11,7 @@ import discord
 import httpx
 from openai.types.chat import ChatCompletionMessageToolCall
 
+from ..config import SearchSettings
 from .async_utils import await_task_with_heartbeats
 from .attachments import (
     DocumentChunks,
@@ -246,13 +247,15 @@ def format_tool_call(tool_call: Any) -> dict[str, Any]:
 def format_search_results(results: list[dict[str, Any]]) -> str:
     formatted = []
     for r in results:
-        formatted.append(
-            {
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "snippet": r.get("snippet", ""),
-            }
-        )
+        item = {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("snippet", ""),
+        }
+        score = r.get("score")
+        if score is not None:
+            item["score"] = score
+        formatted.append(item)
     return json.dumps(formatted, ensure_ascii=False)
 
 
@@ -282,6 +285,7 @@ async def run_research_loop(
     if tools is None:
         tools = ALL_RESEARCH_TOOLS
 
+    search_settings = SearchSettings.from_config(config)
     pages_fetched = 0
     for iteration in range(max_iterations):
         logger.info(
@@ -363,6 +367,7 @@ async def run_research_loop(
                         results = await search_topics(
                             [query],
                             max_results=search_results_per_topic,
+                            search_settings=search_settings,
                         )
                         search_data = results.get(query, [])
                     except Exception:

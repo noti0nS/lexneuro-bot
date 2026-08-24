@@ -38,7 +38,12 @@ def test_format_tool_call() -> None:
 
 def test_format_search_results() -> None:
     results = [
-        {"title": "Title 1", "url": "https://example.com/1", "snippet": "Snippet 1"},
+        {
+            "title": "Title 1",
+            "url": "https://example.com/1",
+            "snippet": "Snippet 1",
+            "score": 0.95,
+        },
         {"title": "Title 2", "url": "https://example.com/2", "snippet": "Snippet 2"},
     ]
     output = format_search_results(results)
@@ -46,6 +51,8 @@ def test_format_search_results() -> None:
     assert "https://example.com/1" in output
     assert "Snippet 1" in output
     assert "Title 2" in output
+    assert '"score": 0.95' in output
+    assert output.count('"score"') == 1  # missing score is omitted
 
 
 def test_format_search_results_empty() -> None:

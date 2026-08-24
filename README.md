@@ -31,7 +31,7 @@ Shows a complete list of all available slash commands, trigger commands, and AI 
 
 ### `/pesquisa` — Academic document generation
 
-Produces articles, legal briefs, or technical documentation with integrated web search (DuckDuckGo). The model runs an agentic loop of searching and reading pages before writing.
+Produces articles, legal briefs, or technical documentation with integrated web search (Tavily with DuckDuckGo fallback). The model runs an agentic loop of searching and reading pages before writing.
 
 Three contexts: **Academic / ABNT**, **NPJ / Legal Brief**, **Programming / Neuro**. Three length levels: short (~1 page), standard (~3 pages), full (5+ pages). Exports to `.docx` and `.odt`.
 

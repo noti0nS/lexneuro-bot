@@ -68,7 +68,7 @@ uv run python main.py                  # run the bot
 - `/help` — explica todos os comandos. **Sempre atualize `src/commands/slashes/help.py`** quando uma funcionalidade visível ao usuário for adicionada, removida ou alterada.
 - `/model <name>` — switch LLM model (admin only per `permissions.users.admin_ids`). Autocomplete reloads config on empty input.
 - `/abnt <doc> [instructions]` — evaluate `.docx`/`.odt` for ABNT compliance. Returns structured JSON then reformats into a user message.
-- `/pesquisa` — web search + LLM document generation. Uses DuckDuckGo. Supports depth/audience/format options.
+- `/pesquisa` — web search + LLM document generation. Uses Tavily when `search.tavily.enabled` is true (`api_key` or `TAVILY_API_KEY` env var; empty key = rate-limited keyless mode); otherwise DuckDuckGo, which is also the fallback when Tavily fails. Supports depth/audience/format options.
 - `/cronograma` — personalized study schedule with interactive weekday picker and multi-format export.
 - `/peca <enunciado> [file] [tipo] [area]` — generate procedural legal documents.
 - `/jurisprudencia <query> [corte] [file]` — search and summarize Brazilian case law.

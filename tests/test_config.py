@@ -1,4 +1,7 @@
+from pytest import MonkeyPatch
+
 from src.config import (
+    SearchSettings,
     build_openai_chat_completion_kwargs,
     get_bot_token,
     get_default_vision_model,
@@ -97,6 +100,7 @@ def test_mask_sensitive_config_redacts_private_values() -> None:
             }
         },
         "nested": [{"refresh_token": "refresh"}],
+        "search": {"tavily": {"enabled": True, "api_key": "tvly-secret"}},
     }
 
     masked = mask_sensitive_config(config)
@@ -108,6 +112,31 @@ def test_mask_sensitive_config_redacts_private_values() -> None:
         == "***REDACTED***"
     )
     assert masked["nested"][0]["refresh_token"] == "***REDACTED***"
+    assert masked["search"]["tavily"]["api_key"] == "***REDACTED***"
+
+
+def test_search_settings_defaults_to_duckduckgo() -> None:
+    for config in ({}, {"search": {}}, {"search": {"tavily": {}}}):
+        settings = SearchSettings.from_config(config)
+        assert settings.tavily_enabled is False
+        assert settings.tavily_api_key == ""
+
+
+def test_search_settings_reads_tavily_section(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    settings = SearchSettings.from_config(
+        {"search": {"tavily": {"enabled": True, "api_key": " tvly-key "}}}
+    )
+    assert settings.tavily_enabled is True
+    assert settings.tavily_api_key == "tvly-key"
+
+
+def test_search_settings_env_var_wins_over_config(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("TAVILY_API_KEY", "env-key")
+    settings = SearchSettings.from_config(
+        {"search": {"tavily": {"enabled": True, "api_key": "cfg-key"}}}
+    )
+    assert settings.tavily_api_key == "env-key"
 
 
 def test_build_kwargs_includes_reasoning_effort() -> None:
