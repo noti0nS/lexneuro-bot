@@ -127,6 +127,7 @@ def register_peca_command(
                 "Você não tem permissão para usar este bot aqui.", ephemeral=True
             )
             return
+        await interaction.response.defer(ephemeral=True)
 
         peca_config = state.config.get("peca", {})
         max_file_mb = peca_config.get("max_file_mb", 25)
@@ -141,19 +142,17 @@ def register_peca_command(
 
         if fonte is not None:
             if not attachment_is_supported(fonte):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "Tipo de documento não suportado. Envie um arquivo .pdf, .docx, .odt ou .txt.",
-                    ephemeral=True,
                 )
                 return
 
             file_size_mb = fonte.size / (1024 * 1024)
             if file_size_mb > max_file_mb:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"O arquivo excede o limite de {max_file_mb} MB "
                     + f"({file_size_mb:.1f} MB). "
                     + "Envie um arquivo menor.",
-                    ephemeral=True,
                 )
                 return
 
@@ -168,9 +167,8 @@ def register_peca_command(
                     fonte, httpx_client, []
                 )
             except ValueError:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "O documento anexado parece estar vazio.",
-                    ephemeral=True,
                 )
                 return
             except Exception:
@@ -179,9 +177,8 @@ def register_peca_command(
                     interaction.user.id,
                     fonte.filename,
                 )
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "Não consegui extrair o texto do arquivo. Verifique se ele é válido.",
-                    ephemeral=True,
                 )
                 return
 
@@ -197,9 +194,8 @@ def register_peca_command(
                 doc.total_chars,
             )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "Gerando a peça processual... Isso pode levar alguns segundos.",
-            ephemeral=True,
         )
 
         logger.info(
