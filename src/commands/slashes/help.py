@@ -9,7 +9,7 @@ _HELP_TEXT = """\
 ## Slash commands
 **`/model <nome>`** — Visualiza ou troca o modelo LLM (troca: admin).
 **`/abnt <documento> [instrucoes]`** — Avalia conformidade ABNT de `.docx`/`.odt`.
-**`/peca <enunciado> [arquivo] [tipo] [area] [instrucoes] [format]`** — Gera peça processual. Suporta `.pdf`/`.docx`/`.odt` como entrada.
+**`/peca <enunciado> [enunciado_arquivo] [fonte] [tipo] [area] [instrucoes] [format]`** — Gera peça processual. O enunciado pode vir como texto ou como arquivo (`enunciado_arquivo`: `.pdf`/`.docx`/`.odt`/`.txt`); `fonte` é um documento de apoio opcional para consulta.
 **`/cronograma <data> <materias> [horas] [instrucoes]`** — Cria cronograma de estudos com seleção interativa de dias e formato (PDF/DOCX/ODT/MD).
 **`/pesquisa <tema> [extensao] [paginas] [auto_refinar] [format]`** — Pesquisa web + gera documento ABNT.
 **`/jurisprudencia <consulta> [tribunal] [periodo] [formato]`** — Pesquisa jurisprudência em tribunais brasileiros (STF/STJ/TST e mais).

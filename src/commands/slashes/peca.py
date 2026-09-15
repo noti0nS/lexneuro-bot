@@ -19,6 +19,7 @@ from ...helpers.async_utils import await_task_with_heartbeats
 from ...helpers.attachments import (
     DocumentChunks,
     attachment_is_supported,
+    read_attachment_text,
 )
 from ...helpers.content import build_filename, get_completion_text
 from ...helpers.documents import DOCUMENT_FORMAT_CHOICES, generate_document
@@ -68,6 +69,11 @@ def filter_choices(
     ]
 
 
+def combine_enunciado(text: str, file_text: str | None) -> str:
+    parts = [part.strip() for part in (text, file_text) if part and part.strip()]
+    return "\n\n".join(parts)
+
+
 async def tipo_autocomplete(
     interaction: discord.Interaction,
     current: str,
@@ -95,8 +101,9 @@ def register_peca_command(
         description="Gere uma peça processual completa a partir de um enunciado ou arquivo",
     )
     @discord.app_commands.describe(
-        enunciado="Enunciado do caso prático ou instruções da peça",
-        fonte="Documento fonte (.pdf, .docx, .odt, .txt)",
+        enunciado="Texto do enunciado (casos curtos)",
+        enunciado_arquivo="Arquivo com o enunciado (.pdf, .docx, .odt, .txt)",
+        fonte="Documento de apoio para consulta (opcional)",
         tipo="Tipo da peça processual (se omitido, o bot infere)",
         area="Área do Direito (ex: Civil, Penal, Trabalhista)",
         instrucoes="Instruções adicionais para a geração da peça",
@@ -107,6 +114,7 @@ def register_peca_command(
     async def peca_command(
         interaction: discord.Interaction,
         enunciado: str = "",
+        enunciado_arquivo: discord.Attachment | None = None,
         fonte: discord.Attachment | None = None,
         tipo: str | None = None,
         area: str | None = None,
@@ -115,12 +123,52 @@ def register_peca_command(
     ) -> None:
         formato_valor = format.value if format else "docx"
 
-        if not enunciado.strip() and fonte is None:
+        if not enunciado.strip() and enunciado_arquivo is None:
             await interaction.response.send_message(
-                "Informe um enunciado ou anexe um arquivo (.pdf, .docx, .odt) com o caso.",
+                "Informe o enunciado em texto ou anexe um arquivo com o enunciado "
+                + "(.pdf, .docx, .odt, .txt). O documento de apoio (`fonte`) não "
+                + "substitui o enunciado.",
                 ephemeral=True,
             )
             return
+
+        for attachment in (enunciado_arquivo, fonte):
+            if attachment is not None and not attachment_is_supported(attachment):
+                await interaction.response.send_message(
+                    "Tipo de documento não suportado. Envie um arquivo "
+                    + ".pdf, .docx, .odt ou .txt.",
+                    ephemeral=True,
+                )
+                return
+
+        peca_config = state.config.get("peca", {})
+        max_file_mb = peca_config.get("max_file_mb", 25)
+        max_enunciado_kb = peca_config.get("max_enunciado_kb", 1024)
+        max_enunciado_chars = peca_config.get("max_enunciado_chars", 200000)
+        peca_model = peca_config.get("model")
+        curr_model = peca_model if peca_model else state.curr_model
+
+        if enunciado_arquivo is not None:
+            enunciado_file_kb = enunciado_arquivo.size / 1024
+            if enunciado_file_kb > max_enunciado_kb:
+                await interaction.response.send_message(
+                    "O arquivo do enunciado excede o limite de "
+                    + f"{max_enunciado_kb} KB ({enunciado_file_kb:.1f} KB). "
+                    + "Envie um arquivo menor.",
+                    ephemeral=True,
+                )
+                return
+
+        if fonte is not None:
+            file_size_mb = fonte.size / (1024 * 1024)
+            if file_size_mb > max_file_mb:
+                await interaction.response.send_message(
+                    f"O arquivo de apoio excede o limite de {max_file_mb} MB "
+                    + f"({file_size_mb:.1f} MB). "
+                    + "Envie um arquivo menor.",
+                    ephemeral=True,
+                )
+                return
 
         if not user_has_permission(interaction.user, interaction.channel, state.config):
             await interaction.response.send_message(
@@ -129,33 +177,65 @@ def register_peca_command(
             return
         await interaction.response.defer(ephemeral=True)
 
-        peca_config = state.config.get("peca", {})
-        max_file_mb = peca_config.get("max_file_mb", 25)
-        peca_model = peca_config.get("model")
-        curr_model = peca_model if peca_model else state.curr_model
+        enunciado_text = enunciado.strip()
+        enunciado_origem: str | None = None
 
-        combined_text = enunciado.strip()
+        if enunciado_arquivo is not None:
+            logger.info(
+                "Peça enunciado file download started (user ID: %s, file: %s)",
+                interaction.user.id,
+                enunciado_arquivo.filename,
+            )
+
+            try:
+                file_text = await read_attachment_text(enunciado_arquivo, httpx_client)
+            except ValueError:
+                await interaction.followup.send(
+                    "Tipo de documento não suportado. Envie um arquivo "
+                    + ".pdf, .docx, .odt ou .txt.",
+                )
+                return
+            except Exception:
+                logger.exception(
+                    "Peça enunciado file extraction failed (user ID: %s, file: %s)",
+                    interaction.user.id,
+                    enunciado_arquivo.filename,
+                )
+                await interaction.followup.send(
+                    "Não consegui extrair o texto do arquivo do enunciado. "
+                    + "Verifique se ele é válido.",
+                )
+                return
+
+            if not file_text.strip():
+                await interaction.followup.send(
+                    "O arquivo do enunciado parece estar vazio.",
+                )
+                return
+
+            enunciado_text = combine_enunciado(enunciado_text, file_text)
+            enunciado_origem = enunciado_arquivo.filename
+
+            if len(enunciado_text) > max_enunciado_chars:
+                await interaction.followup.send(
+                    f"O enunciado tem {len(enunciado_text):,} caracteres, acima do "
+                    + f"limite de {max_enunciado_chars:,}. Reduza o enunciado ou "
+                    + "divida o arquivo em partes menores.",
+                )
+                return
+
+            logger.info(
+                "Peça enunciado file extraction completed (user ID: %s, file: %s, chars: %s)",
+                interaction.user.id,
+                enunciado_arquivo.filename,
+                len(enunciado_text),
+            )
 
         doc: DocumentChunks | None = None
         peca_tools: list[dict[str, Any]] = []
         peca_on_extra_tool: Callable[[str, dict[str, Any]], str] | None = None
 
         if fonte is not None:
-            if not attachment_is_supported(fonte):
-                await interaction.followup.send(
-                    "Tipo de documento não suportado. Envie um arquivo .pdf, .docx, .odt ou .txt.",
-                )
-                return
-
-            file_size_mb = fonte.size / (1024 * 1024)
-            if file_size_mb > max_file_mb:
-                await interaction.followup.send(
-                    f"O arquivo excede o limite de {max_file_mb} MB "
-                    + f"({file_size_mb:.1f} MB). "
-                    + "Envie um arquivo menor.",
-                )
-                return
-
             logger.info(
                 "Peça file download started (user ID: %s, file: %s)",
                 interaction.user.id,
@@ -199,21 +279,24 @@ def register_peca_command(
         )
 
         logger.info(
-            "Peça command started (user ID: %s, chars: %s, tipo: %r, area: %r, format: %s, has_file: %s)",
+            "Peça command started (user ID: %s, chars: %s, tipo: %r, area: %r, "
+            + "format: %s, enunciado_arquivo: %r, has_fonte: %s)",
             interaction.user.id,
-            len(combined_text),
+            len(enunciado_text),
             tipo,
             area,
             formato_valor,
+            enunciado_origem,
             doc is not None,
         )
 
         messages = build_peca_messages(
-            enunciado=combined_text,
+            enunciado=enunciado_text,
             tipo=tipo,
             area=area,
             instrucoes=instrucoes,
-            has_attachment=doc is not None,
+            has_source_document=doc is not None,
+            enunciado_arquivo_nome=enunciado_origem,
         )
 
         raw_output = ""

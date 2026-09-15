@@ -88,22 +88,25 @@ sem explicações, sem comentários fora da peça.
 
 
 PECA_DOCUMENT_TOOL_SECTION = """\
-### CASO PRÁTICO (documento anexado)
-O usuário anexou um arquivo com o enunciado do caso prático.
+### DOCUMENTO DE APOIO (anexado)
+O usuário anexou um documento de apoio para consulta. Ele NÃO é o enunciado
+do caso — o enunciado está na mensagem do usuário.
 O conteúdo NÃO está nesta mensagem — use as ferramentas abaixo para consultá-lo:
 
 - `search_document(query, max_results, context_before, context_after)`: busca
   palavras-chave no documento. Use para localizar: nomes das partes, fatos
   relevantes, artigos de lei citados, valores, datas, cláusulas contratuais.
 - `read_document_chunk(start_index, count)`: lê parágrafos específicos.
-  Use para ler a descrição completa do caso, qualificação das partes,
-  ou pedidos mencionados no enunciado.
+  Use para ler trechos complementares ou verificar dados do enunciado.
 
-IMPORTANTE: Inspecione o documento ANTES de redigir a peça. Extraia dele:
-- Quem é o autor e quem é o réu (qualificação)
-- Os fatos juridicamente relevantes (cronologia, valores, descumprimentos)
-- A área do direito e o tipo de peça (se não informados explicitamente)
-- Fundamentos legais mencionados no próprio enunciado
+Use este documento apenas para complementar ou conferir informações do
+enunciado. Ele não substitui nem redefine o caso descrito pelo usuário.
+"""
+
+PECA_ENUNCIADO_ARQUIVO_NOTE = """\
+### ORIGEM DO ENUNCIADO
+O enunciado do caso foi extraído do arquivo "{filename}" e está reproduzido
+integralmente na mensagem do usuário, delimitado por <enunciado> ... </enunciado>.
 """
 
 
@@ -113,7 +116,8 @@ def build_peca_messages(
     tipo: str | None = None,
     area: str | None = None,
     instrucoes: str | None = None,
-    has_attachment: bool = False,
+    has_source_document: bool = False,
+    enunciado_arquivo_nome: str | None = None,
 ) -> list[dict[str, Any]]:
     tipo_display = tipo if tipo else "(inferir automaticamente)"
     area_display = area if area else "(inferir automaticamente)"
@@ -125,10 +129,20 @@ def build_peca_messages(
         instrucoes=instrucoes_display,
     )
 
-    if has_attachment:
+    if has_source_document:
         system_prompt += "\n\n" + PECA_DOCUMENT_TOOL_SECTION
+
+    if enunciado_arquivo_nome:
+        system_prompt += "\n\n" + PECA_ENUNCIADO_ARQUIVO_NOTE.format(
+            filename=enunciado_arquivo_nome
+        )
+        user_content = (
+            f'<enunciado arquivo="{enunciado_arquivo_nome}">\n{enunciado}\n</enunciado>'
+        )
+    else:
+        user_content = enunciado
 
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": enunciado},
+        {"role": "user", "content": user_content},
     ]

@@ -106,8 +106,9 @@ abnt:
   max_document_kb: 512
 
 peca:
-  max_enunciado_kb: 256
-  max_file_mb: 25
+  max_enunciado_kb: 1024       # max size of the enunciado file (.pdf/.docx/.odt/.txt)
+  max_enunciado_chars: 200000  # max inline size of the extracted enunciado text
+  max_file_mb: 25              # max size of the optional supporting document (`fonte`)
   # model: openai/gpt-5         # optional: specialized model for legal pieces
 
 cronograma:

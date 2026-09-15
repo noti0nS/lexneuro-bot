@@ -7,6 +7,7 @@ from src.commands.slashes.peca import (
     AREA_CHOICES,
     TIPO_CHOICES,
     area_autocomplete,
+    combine_enunciado,
     filter_choices,
     tipo_autocomplete,
 )
@@ -60,6 +61,53 @@ def test_build_messages_enunciado_as_user_message() -> None:
     messages = build_peca_messages(enunciado="Caso prático de direito penal")
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "Caso prático de direito penal"
+
+
+def test_combine_enunciado_text_only() -> None:
+    assert combine_enunciado("texto", None) == "texto"
+    assert combine_enunciado("texto", "") == "texto"
+    assert combine_enunciado("  texto  ", "") == "texto"
+
+
+def test_combine_enunciado_file_only() -> None:
+    assert combine_enunciado("", "conteúdo") == "conteúdo"
+    assert combine_enunciado("   ", "  conteúdo  ") == "conteúdo"
+
+
+def test_combine_enunciado_both_text_first() -> None:
+    assert combine_enunciado("texto", "arquivo") == "texto\n\narquivo"
+    assert combine_enunciado("  texto  ", "  arquivo  ") == "texto\n\narquivo"
+
+
+def test_build_messages_source_document_section() -> None:
+    messages = build_peca_messages(enunciado="caso", has_source_document=True)
+    system = messages[0]["content"]
+    assert "DOCUMENTO DE APOIO" in system
+    assert "NÃO é o enunciado" in system
+    assert "search_document" in system
+
+
+def test_build_messages_without_source_document_has_no_section() -> None:
+    messages = build_peca_messages(enunciado="caso")
+    assert "DOCUMENTO DE APOIO" not in messages[0]["content"]
+
+
+def test_build_messages_enunciado_from_file_is_wrapped() -> None:
+    messages = build_peca_messages(
+        enunciado="Caso extraído do arquivo",
+        enunciado_arquivo_nome="caso.pdf",
+    )
+    assert messages[1]["content"].startswith('<enunciado arquivo="caso.pdf">')
+    assert "Caso extraído do arquivo" in messages[1]["content"]
+    assert messages[1]["content"].endswith("</enunciado>")
+    assert "ORIGEM DO ENUNCIADO" in messages[0]["content"]
+    assert "caso.pdf" in messages[0]["content"]
+
+
+def test_build_messages_plain_enunciado_not_wrapped() -> None:
+    messages = build_peca_messages(enunciado="Caso simples")
+    assert messages[1]["content"] == "Caso simples"
+    assert "ORIGEM DO ENUNCIADO" not in messages[0]["content"]
 
 
 def test_system_prompt_contains_placeholders() -> None:
