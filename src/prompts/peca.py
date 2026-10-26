@@ -89,24 +89,36 @@ sem explicações, sem comentários fora da peça.
 
 PECA_DOCUMENT_TOOL_SECTION = """\
 ### DOCUMENTO DE APOIO (anexado)
-O usuário anexou um documento de apoio para consulta. Ele NÃO é o enunciado
-do caso — o enunciado está na mensagem do usuário.
+O usuário anexou um documento de apoio para consulta (ele NÃO é o enunciado \
+principal da mensagem, mas pode conter peças processuais, contratos, provas \
+ou detalhes essenciais do caso).
 O conteúdo NÃO está nesta mensagem — use as ferramentas abaixo para consultá-lo:
 
 - `search_document(query, max_results, context_before, context_after)`: busca
   palavras-chave no documento. Use para localizar: nomes das partes, fatos
   relevantes, artigos de lei citados, valores, datas, cláusulas contratuais.
 - `read_document_chunk(start_index, count)`: lê parágrafos específicos.
-  Use para ler trechos complementares ou verificar dados do enunciado.
+  Use para ler a descrição completa do caso, qualificação das partes,
+  cláusulas ou pedidos mencionados no documento.
 
-Use este documento apenas para complementar ou conferir informações do
-enunciado. Ele não substitui nem redefine o caso descrito pelo usuário.
+IMPORTANTE: Inspecione o documento ANTES de redigir a peça. Extraia dele:
+- Quem é o autor e quem é o réu (qualificação)
+- Os fatos juridicamente relevantes (cronologia, valores, descumprimentos)
+- A área do direito e o tipo de peça (se não informados explicitamente)
+- Fundamentos legais, cláusulas ou pedidos mencionados no documento
 """
 
 PECA_ENUNCIADO_ARQUIVO_NOTE = """\
 ### ORIGEM DO ENUNCIADO
-O enunciado do caso foi extraído do arquivo "{filename}" e está reproduzido
-integralmente na mensagem do usuário, delimitado por <enunciado> ... </enunciado>.
+O enunciado do caso foi extraído do arquivo "{filename}" (acompanhado de \
+eventuais observações iniciais do usuário) e está reproduzido integralmente \
+na mensagem do usuário, delimitado por <enunciado> ... </enunciado>.
+
+IMPORTANTE: Inspecione todo o enunciado ANTES de redigir a peça. Extraia dele:
+- Quem é o autor e quem é o réu (qualificação)
+- Os fatos juridicamente relevantes (cronologia, valores, descumprimentos)
+- A área do direito e o tipo de peça (se não informados explicitamente)
+- Fundamentos legais mencionados no próprio enunciado
 """
 
 
@@ -118,6 +130,8 @@ def build_peca_messages(
     instrucoes: str | None = None,
     has_source_document: bool = False,
     enunciado_arquivo_nome: str | None = None,
+    source_document_name: str | None = None,
+    source_document_chunks: int | None = None,
 ) -> list[dict[str, Any]]:
     tipo_display = tipo if tipo else "(inferir automaticamente)"
     area_display = area if area else "(inferir automaticamente)"
@@ -131,6 +145,12 @@ def build_peca_messages(
 
     if has_source_document:
         system_prompt += "\n\n" + PECA_DOCUMENT_TOOL_SECTION
+        if source_document_name and source_document_chunks is not None:
+            system_prompt += (
+                f'\nDocumento anexado: "{source_document_name}" '
+                f"({source_document_chunks} parágrafos/chunks disponíveis, "
+                f"índices de 0 a {max(0, source_document_chunks - 1)}).\n"
+            )
 
     if enunciado_arquivo_nome:
         system_prompt += "\n\n" + PECA_ENUNCIADO_ARQUIVO_NOTE.format(

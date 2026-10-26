@@ -13,6 +13,7 @@ from discord.ext import commands
 
 from ...helpers.ai_tools import (
     DocumentToolSetup,
+    format_tool_call,
     setup_document_tools,
 )
 from ...helpers.async_utils import await_task_with_heartbeats
@@ -124,13 +125,16 @@ def register_peca_command(
         formato_valor = format.value if format else "docx"
 
         if not enunciado.strip() and enunciado_arquivo is None:
-            await interaction.response.send_message(
-                "Informe o enunciado em texto ou anexe um arquivo com o enunciado "
-                + "(.pdf, .docx, .odt, .txt). O documento de apoio (`fonte`) não "
-                + "substitui o enunciado.",
-                ephemeral=True,
-            )
-            return
+            if fonte is not None:
+                enunciado_arquivo = fonte
+                fonte = None
+            else:
+                await interaction.response.send_message(
+                    "Informe o enunciado em texto ou anexe um arquivo com o enunciado "
+                    + "(.pdf, .docx, .odt, .txt).",
+                    ephemeral=True,
+                )
+                return
 
         for attachment in (enunciado_arquivo, fonte):
             if attachment is not None and not attachment_is_supported(attachment):
@@ -145,6 +149,7 @@ def register_peca_command(
         max_file_mb = peca_config.get("max_file_mb", 25)
         max_enunciado_kb = peca_config.get("max_enunciado_kb", 1024)
         max_enunciado_chars = peca_config.get("max_enunciado_chars", 200000)
+        max_tool_iterations = peca_config.get("max_tool_iterations", 10)
         peca_model = peca_config.get("model")
         curr_model = peca_model if peca_model else state.curr_model
 
@@ -297,6 +302,8 @@ def register_peca_command(
             instrucoes=instrucoes,
             has_source_document=doc is not None,
             enunciado_arquivo_nome=enunciado_origem,
+            source_document_name=doc.filename if doc is not None else None,
+            source_document_chunks=doc.total_chunks if doc is not None else None,
         )
 
         raw_output = ""
@@ -305,10 +312,11 @@ def register_peca_command(
         try:
             async with llm_error_handling(interaction, "Peça"):
                 if doc is not None:
-                    for iteration in range(5):
+                    for iteration in range(max_tool_iterations):
                         logger.info(
-                            "Peça LLM tool iteration %s/5 (user ID: %s, model: %s)",
+                            "Peça LLM tool iteration %s/%s (user ID: %s, model: %s)",
                             iteration + 1,
+                            max_tool_iterations,
                             interaction.user.id,
                             curr_model,
                         )
@@ -334,7 +342,21 @@ def register_peca_command(
                             break
 
                         if choice.message and choice.message.tool_calls:
-                            messages.append(choice.message.to_dict())
+                            assistant_msg: dict[str, Any] = {
+                                "role": "assistant",
+                                "content": choice.message.content or "",
+                                "tool_calls": [
+                                    format_tool_call(tc)
+                                    for tc in choice.message.tool_calls
+                                ],
+                            }
+                            if (
+                                reasoning := getattr(
+                                    choice.message, "reasoning_content", None
+                                )
+                            ) is not None:
+                                assistant_msg["reasoning_content"] = reasoning
+                            messages.append(assistant_msg)
                             for tc_raw in choice.message.tool_calls:
                                 tc = cast(Any, tc_raw)
                                 try:
@@ -361,6 +383,7 @@ def register_peca_command(
                                 model_name=curr_model,
                                 messages=messages,
                                 stream=False,
+                                tools=peca_tools,
                                 tool_choice="none",
                             )
                         )

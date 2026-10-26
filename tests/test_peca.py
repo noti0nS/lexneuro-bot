@@ -85,6 +85,21 @@ def test_build_messages_source_document_section() -> None:
     assert "DOCUMENTO DE APOIO" in system
     assert "NÃO é o enunciado" in system
     assert "search_document" in system
+    assert "IMPORTANTE: Inspecione o documento ANTES de redigir a peça" in system
+    assert "Quem é o autor e quem é o réu" in system
+
+
+def test_build_messages_source_document_metadata() -> None:
+    messages = build_peca_messages(
+        enunciado="caso",
+        has_source_document=True,
+        source_document_name="contrato.pdf",
+        source_document_chunks=42,
+    )
+    system = messages[0]["content"]
+    assert '"contrato.pdf"' in system
+    assert "42 parágrafos/chunks" in system
+    assert "0 a 41" in system
 
 
 def test_build_messages_without_source_document_has_no_section() -> None:
@@ -102,6 +117,10 @@ def test_build_messages_enunciado_from_file_is_wrapped() -> None:
     assert messages[1]["content"].endswith("</enunciado>")
     assert "ORIGEM DO ENUNCIADO" in messages[0]["content"]
     assert "caso.pdf" in messages[0]["content"]
+    assert (
+        "IMPORTANTE: Inspecione todo o enunciado ANTES de redigir a peça"
+        in messages[0]["content"]
+    )
 
 
 def test_build_messages_plain_enunciado_not_wrapped() -> None:

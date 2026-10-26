@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -6,7 +7,10 @@ from src.helpers.ai_tools import (
     ContentFilterError,
     format_search_results,
     format_tool_call,
+    handle_read_document_chunk,
+    handle_search_document,
 )
+from src.helpers.attachments import build_document_chunks, extract_text_sync
 
 
 @dataclass
@@ -91,3 +95,34 @@ def test_content_filter_error_is_exception() -> None:
     exc = ContentFilterError("test message")
     assert isinstance(exc, Exception)
     assert str(exc) == "test message"
+
+
+def test_handle_search_document_multiword_fallback() -> None:
+    doc = build_document_chunks(
+        "contrato.pdf",
+        (
+            "Cláusula 1: O aluguel mensal será de R$ 2.500,00.\n\n"
+            "Cláusula 2: Em caso de atraso, incidirá multa de 10% sobre o débito.\n\n"
+            "Cláusula 3: Foro da Comarca de Curitiba."
+        ),
+    )
+    raw = handle_search_document(doc, {"query": "cláusula multa débito"})
+    hits = json.loads(raw)
+    assert isinstance(hits, list)
+    assert len(hits) >= 1
+    assert hits[0]["match_index"] == 1
+
+
+def test_handle_read_document_chunk_reads_up_to_25() -> None:
+    text = "\n\n".join(f"Parágrafo {i}" for i in range(20))
+    doc = build_document_chunks("doc.txt", text)
+    raw = handle_read_document_chunk(doc, {"start_index": 0, "count": 15})
+    chunks = json.loads(raw)
+    assert len(chunks) == 15
+    assert chunks[0]["chunk_index"] == 0
+    assert chunks[-1]["chunk_index"] == 14
+
+
+def test_extract_text_sync_case_insensitive_txt() -> None:
+    result = extract_text_sync("Conteúdo em TXT".encode(), "CASO.TXT")
+    assert result == "Conteúdo em TXT"

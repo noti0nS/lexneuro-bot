@@ -31,10 +31,12 @@ def attachment_is_supported(attachment: discord.Attachment) -> bool:
     )
 
 
-def _extract_text_sync(file_bytes: bytes, filename: str) -> str:
-    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+def extract_text_sync(file_bytes: bytes, filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext == "txt":
         return file_bytes.decode("utf-8", errors="replace")
+    if ext == "odt":
+        return get_processor("odt").extract_text(file_bytes)
     from markitdown import MarkItDown
 
     md = MarkItDown(enable_plugins=False)
@@ -56,7 +58,7 @@ async def read_attachment_text(
     response.raise_for_status()
 
     return await asyncio.to_thread(
-        _extract_text_sync, response.content, attachment.filename
+        extract_text_sync, response.content, attachment.filename
     )
 
 

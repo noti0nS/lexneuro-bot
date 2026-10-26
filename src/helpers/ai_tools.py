@@ -131,7 +131,7 @@ READ_DOCUMENT_CHUNK_TOOL: dict[str, Any] = {
                 },
                 "count": {
                     "type": "integer",
-                    "description": "Number of chunks to read (default 5, max 10).",
+                    "description": "Number of chunks to read (default 10, max 25).",
                 },
             },
             "required": ["start_index"],
@@ -145,22 +145,49 @@ DOCUMENT_TOOLS: list[dict[str, Any]] = [
 ]
 
 
+def _build_search_hit(
+    doc: DocumentChunks, match_index: int, ctx_before: int, ctx_after: int
+) -> dict[str, Any]:
+    start = max(0, match_index - ctx_before)
+    end = min(doc.total_chunks, match_index + ctx_after + 1)
+    context_chunks = [
+        {"chunk_index": j, "chunk_text": doc.chunks[j][:2000]}
+        for j in range(start, end)
+    ]
+    return {"match_index": match_index, "context": context_chunks}
+
+
 def handle_search_document(doc: DocumentChunks, args: dict[str, Any]) -> str:
-    query = args["query"].lower()
+    query = args["query"].strip().lower()
     max_results = min(args.get("max_results", 5), 10)
     ctx_before = max(args.get("context_before", 0), 0)
     ctx_after = max(args.get("context_after", 0), 0)
 
     hits: list[dict[str, Any]] = []
-    for i, chunk in enumerate(doc.chunks):
-        if query in chunk.lower():
-            start = max(0, i - ctx_before)
-            end = min(doc.total_chunks, i + ctx_after + 1)
-            context_chunks = [
-                {"chunk_index": j, "chunk_text": doc.chunks[j][:2000]}
-                for j in range(start, end)
-            ]
-            hits.append({"match_index": i, "context": context_chunks})
+    seen_indices: set[int] = set()
+
+    if query:
+        for i, chunk in enumerate(doc.chunks):
+            if query in chunk.lower():
+                hits.append(_build_search_hit(doc, i, ctx_before, ctx_after))
+                seen_indices.add(i)
+                if len(hits) >= max_results:
+                    break
+
+    tokens = [t for t in query.split() if len(t) >= 2]
+    if len(hits) < max_results and len(tokens) > 1:
+        scored_candidates: list[tuple[int, int]] = []
+        for i, chunk in enumerate(doc.chunks):
+            if i in seen_indices:
+                continue
+            chunk_lower = chunk.lower()
+            matched_tokens = sum(1 for t in tokens if t in chunk_lower)
+            if matched_tokens > 0:
+                scored_candidates.append((matched_tokens, i))
+
+        scored_candidates.sort(key=lambda item: (-item[0], item[1]))
+        for _, i in scored_candidates:
+            hits.append(_build_search_hit(doc, i, ctx_before, ctx_after))
             if len(hits) >= max_results:
                 break
 
@@ -177,7 +204,7 @@ def handle_search_document(doc: DocumentChunks, args: dict[str, Any]) -> str:
 
 def handle_read_document_chunk(doc: DocumentChunks, args: dict[str, Any]) -> str:
     start = max(args["start_index"], 0)
-    count = min(args.get("count", 5), 10)
+    count = min(args.get("count", 10), 25)
     end = min(doc.total_chunks, start + count)
 
     if start >= doc.total_chunks:
@@ -334,13 +361,16 @@ async def run_research_loop(
                 "; ".join(tool_summary),
             )
 
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": choice.message.content or "",
-                    "tool_calls": [format_tool_call(tc) for tc in tool_calls],
-                }
-            )
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": choice.message.content or "",
+                "tool_calls": [format_tool_call(tc) for tc in tool_calls],
+            }
+            if (
+                reasoning := getattr(choice.message, "reasoning_content", None)
+            ) is not None:
+                assistant_msg["reasoning_content"] = reasoning
+            messages.append(assistant_msg)
 
             for tc in tool_calls:
                 if tc.function.name == "web_search":
